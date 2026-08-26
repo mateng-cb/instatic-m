@@ -34,13 +34,19 @@ export interface BuildExportTreeInput {
 }
 
 export class StaticExportError extends Error {
+  readonly code: 'not-published' | 'per-visitor-hole' | 'write-failed'
+  readonly report: ExportReportItem[]
+
   constructor(
     message: string,
-    readonly code: 'not-published' | 'per-visitor-hole' | 'write-failed',
-    readonly report: ExportReportItem[] = [],
+    code: 'not-published' | 'per-visitor-hole' | 'write-failed',
+    report: ExportReportItem[] = [],
+    options?: ErrorOptions,
   ) {
-    super(message)
+    super(message, options)
     this.name = 'StaticExportError'
+    this.code = code
+    this.report = report
   }
 }
 

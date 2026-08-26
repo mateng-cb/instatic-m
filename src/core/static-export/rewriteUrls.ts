@@ -155,7 +155,7 @@ function rewriteSrcsetAttributes(html: string, ctx: RewriteRootAbsolutePathConte
 function rewriteCssUrls(html: string, ctx: RewriteRootAbsolutePathContext): string {
   return html.replace(
     /url\(\s*(['"]?)(\/(?!\/)[^'")\s]+)\1\s*\)/g,
-    (match, quote, path) => {
+    (match, _quote, path) => {
       const rewritten = rewriteRootAbsolutePath(path, ctx)
       return rewritten === path ? match : `url('${rewritten}')`
     },
