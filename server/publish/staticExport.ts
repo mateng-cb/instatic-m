@@ -96,11 +96,9 @@ export async function exportPublishedSiteStatic(options: {
 }): Promise<StaticExportResult> {
   const { uploadsDir, outDir, pathMode, basePath, expandHoles } = options
 
-  const homepage = await readArtefact(uploadsDir, '/')
-  if (homepage === null) {
-    throw new StaticExportError('Site has not been published yet', 'not-published')
-  }
-
+  // "Published" means the current slot has at least one baked HTML page.
+  // Do NOT require `/` → index.html: HTML imports often land as `/index` or
+  // `/index-2` while still being a successful Publish.
   const slotDir = join(uploadsDir, 'published', 'current')
   const htmlRelPaths = await walkPublishedHtmlFiles(slotDir)
 
@@ -111,6 +109,10 @@ export async function exportPublishedSiteStatic(options: {
     const html = await readArtefact(uploadsDir, url)
     if (html === null) continue
     pages.push({ url, html })
+  }
+
+  if (pages.length === 0) {
+    throw new StaticExportError('Site has not been published yet', 'not-published')
   }
 
   pages.sort((a, b) => a.url.localeCompare(b.url))
