@@ -552,6 +552,63 @@ This is rare and requires architectural review — most "new behavior" fits with
 
 ---
 
+## Static export (Phase A)
+
+Portable static export is a **separate pipeline** from local Publish. It reads the already-published slot (`uploads/published/current/`), rewrites URLs for offline / subpath hosting, and returns a ZIP. It does **not** change how the Bun-hosted public site is published.
+
+### Prerequisites and gating
+
+- The site must already have a successful local Publish (`published/current` readable). Otherwise the API returns **409**.
+- Same blast radius as publish: capability `pages.publish` + step-up.
+- Admin entry: Publish menu → **Export static site…** (defaults to `pathMode: 'relative'`).
+
+### API
+
+```http
+POST /admin/api/cms/export-static
+Content-Type: application/json
+
+{
+  "pathMode": "relative" | "basePath",
+  "basePath": "/repo-name"
+}
+```
+
+| Result | Meaning |
+|--------|---------|
+| `200` `application/zip` | Success. `Content-Disposition: attachment; filename="instatic-static-export.zip"` |
+| `400` | `pathMode: 'basePath'` without a non-empty `basePath` |
+| `401` / `403` | Unauthenticated / missing `pages.publish` |
+| `409` | Site has not been published yet |
+| `422` | Export aborted — typically a per-visitor dynamic hole (`report` included) |
+
+Client helper: `downloadStaticExport({ pathMode, basePath? })` in `@core/persistence`.
+
+### Behaviour (locked product decisions)
+
+| Topic | Behaviour |
+|-------|-----------|
+| Routes | Directory style: `/` → `index.html`, `/about` → `about/index.html` |
+| Paths | ZIP default `relative`; `basePath` prefixes root-absolute URLs for project Pages |
+| Media | Only `/uploads/...` paths still referenced after rewrite are copied |
+| Shared holes | Expanded to a snapshot and inlined; hole runtime removed when no holes remain |
+| Per-visitor holes | Fail the whole export (**422**) |
+| CMS forms | Still exported; `manifest.json` records warnings — submits will not work on static hosts |
+
+### Code map
+
+```text
+src/core/static-export/     — pure export tree builders (rewrite, scan, expand, collect, layout)
+server/publish/staticExport.ts + staticExportHoles.ts + holeFragment.ts
+server/handlers/cms/staticExport.ts
+src/core/persistence/cmsStaticExport.ts
+src/admin/pages/site/toolbar/PublishButton.tsx
+```
+
+Phase B (push the ZIP to GitHub via Git Data API) is **out of scope** here — see `docs/plans/2026-08-24-static-export-github-publish.md`.
+
+---
+
 ## Related
 
 - [docs/architecture.md](../architecture.md) — system overview
