@@ -1,5 +1,6 @@
 export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
+export { downloadStaticExport } from './cmsStaticExport'
 export { buildCmsRuntimePreview, resolveCmsRuntimeDependencies } from './cmsRuntime'
 export type { CmsRuntimePreviewResult } from './cmsRuntime'
 export { listCmsMediaAssets } from './cmsMedia'

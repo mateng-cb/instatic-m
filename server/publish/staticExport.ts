@@ -1,5 +1,5 @@
-import { dirname, join } from 'node:path'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, relative } from 'node:path'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import {
   buildExportTree,
   StaticExportError,
@@ -12,6 +12,7 @@ import {
   readArtefact,
   readStaticAsset,
 } from './staticArtefact'
+import { createStoredZipStream, type StoredZipEntry } from '../archive/storedZip'
 
 function normalizeRelPath(relPath: string): string {
   return relPath.replace(/\\/g, '/')
@@ -125,4 +126,44 @@ export async function exportPublishedSiteStatic(options: {
     fs: createExportFsAdapter(uploadsDir, outDir),
     expandHoles,
   })
+}
+
+async function walkExportFiles(
+  dir: string,
+  base = dir,
+): Promise<{ relPath: string; absPath: string; sizeBytes: number }[]> {
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  const files: { relPath: string; absPath: string; sizeBytes: number }[] = []
+  for (const entry of entries) {
+    const absPath = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...(await walkExportFiles(absPath, base)))
+      continue
+    }
+    if (!entry.isFile()) continue
+    const relPath = relative(base, absPath).replace(/\\/g, '/')
+    const fileStat = await stat(absPath)
+    files.push({ relPath, absPath, sizeBytes: fileStat.size })
+  }
+  return files
+}
+
+export async function collectExportZipEntries(outDir: string): Promise<StoredZipEntry[]> {
+  const files = await walkExportFiles(outDir)
+  files.sort((a, b) => a.relPath.localeCompare(b.relPath))
+  return files.map(({ relPath, absPath, sizeBytes }) => ({
+    path: relPath,
+    sizeBytes,
+    source: absPath,
+  }))
+}
+
+export function createExportZipStream(outDir: string): Promise<ReadableStream<Uint8Array>> {
+  return collectExportZipEntries(outDir).then((entries) => createStoredZipStream(entries))
 }
