@@ -14,5 +14,7 @@ export {
   rewriteDocumentUrls,
   rewriteRootAbsolutePath,
 } from './rewriteUrls'
+export type { ExpandHolesHooks, ExpandHolesResult } from './expandHoles'
+export { applyHoleExpansion } from './expandHoles'
 export type { HoleKind, ScanHtmlOptions } from './scanDynamic'
 export { classifyHoleKind, scanHtmlForStaticExportIssues } from './scanDynamic'
