@@ -14,3 +14,5 @@ export {
   rewriteDocumentUrls,
   rewriteRootAbsolutePath,
 } from './rewriteUrls'
+export type { HoleKind, ScanHtmlOptions } from './scanDynamic'
+export { classifyHoleKind, scanHtmlForStaticExportIssues } from './scanDynamic'
