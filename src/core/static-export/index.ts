@@ -19,3 +19,13 @@ export { applyHoleExpansion } from './expandHoles'
 export type { HoleKind, ScanHtmlOptions } from './scanDynamic'
 export { classifyHoleKind, scanHtmlForStaticExportIssues } from './scanDynamic'
 export { collectMediaRefs } from './collectMediaRefs'
+export type {
+  BuildExportTreeInput,
+  ExportFsAdapter,
+  ExportPageInput,
+} from './buildExportTree'
+export {
+  buildExportTree,
+  collectInstaticAssetRefs,
+  StaticExportError,
+} from './buildExportTree'
