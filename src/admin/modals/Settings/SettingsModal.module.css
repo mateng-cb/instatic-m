@@ -329,6 +329,39 @@
   font-family: var(--font-mono);
 }
 
+.pubFieldHint {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  line-height: 1.4;
+}
+
+.pubTokenMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  margin-bottom: var(--space-xs);
+}
+
+.pubTokenMeta .label {
+  margin-bottom: 0;
+}
+
+.pubTokenStatus {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  line-height: 1.3;
+}
+
+.pubActions {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+  margin-top: var(--space-m);
+}
+
 /* ── GeneralSection ───────────────────────────────────────────────────────── */
 .genFieldRow {
   margin-bottom: var(--space-2xl);

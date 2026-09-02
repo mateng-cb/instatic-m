@@ -2,7 +2,7 @@
 
 This index maps supported deployment targets to the files, variables, and persistence rules they need.
 
-Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, `PUBLIC_ORIGIN`, and `TRUSTED_PROXY_CIDRS`. Reversible server secrets, including AI provider credentials, plugin secret settings, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
+Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, `PUBLIC_ORIGIN`, and `TRUSTED_PROXY_CIDRS`. Reversible server secrets, including AI provider credentials, plugin secret settings, GitHub publish PATs, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
 
 ---
 
@@ -17,6 +17,7 @@ Instatic is one Bun server packaged by the root `Dockerfile`. The server reads r
 | VPS Docker Compose | Self-hosted server, full control | SQLite or bundled Postgres | Docker named volumes | [vps.md](vps.md) |
 | Generic Docker host | Any platform that runs the Dockerfile/image | SQLite or external Postgres | A mounted directory/volume for DB/uploads | [docker-image.md](docker-image.md) |
 | VPS HTTPS | Public domain on a VPS | Unchanged | Caddy cert volume plus app volumes | [tls-caddy.md](tls-caddy.md) |
+| GitHub Pages | Static export to a GitHub branch (no Bun on Pages) | N/A (export is read from published slot) | PAT encrypted in DB; requires `INSTATIC_SECRET_KEY` | [github-pages.md](github-pages.md) |
 
 Back up both the database and uploaded media. See [backup-restore.md](backup-restore.md).
 
@@ -103,6 +104,7 @@ SQLite installs also need the SQLite database file on persistent storage. On pla
 | [docker-image.md](docker-image.md) | Generic Docker image contract and `docker run` examples |
 | [tls-caddy.md](tls-caddy.md) | Caddy TLS overlay for VPS Compose installs |
 | [backup-restore.md](backup-restore.md) | Database and uploads backup/restore |
+| [github-pages.md](github-pages.md) | GitHub Pages static publish (PAT, branch, `basePath`) |
 | [release-workflow.md](release-workflow.md) | Maintainer image publishing workflow |
 
 ## Related

@@ -14,8 +14,10 @@ import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
 import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
+import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
+import { GithubPublishDialog } from '@admin/modals/GithubPublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
@@ -51,6 +53,7 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
   const [state, setState] = useState<PublishState>('idle')
   const [exporting, setExporting] = useState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * The `site` reference captured when the button entered the "published"
@@ -257,6 +260,14 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
       testId: 'toolbar-export-static-action',
     },
     {
+      id: 'publish-github',
+      label: 'Publish to GitHub\u2026',
+      icon: ExternalLinkSolidIcon,
+      disabled: !site,
+      onSelect: () => setGithubDialogOpen(true),
+      testId: 'toolbar-publish-github-action',
+    },
+    {
       id: 'preview',
       label: 'Preview page',
       icon: EyeSolidIcon,
@@ -307,6 +318,10 @@ export function PublishButton({ enabled = true, saveStatus }: PublishButtonProps
           }}
         />
       )}
+      <GithubPublishDialog
+        open={githubDialogOpen}
+        onClose={() => setGithubDialogOpen(false)}
+      />
     </>
   )
 }

@@ -1224,4 +1224,22 @@ export const sqliteMigrations: Migration[] = [
        where trim(lower(display_name)) = trim(lower(email));
     `,
   },
+  {
+    id: '025_github_publish_settings',
+    sql: `
+      create table if not exists github_publish_settings (
+        id text primary key,
+        repo_url text not null default '',
+        owner text not null default '',
+        repo text not null default '',
+        branch text not null default 'gh-pages',
+        target_dir text not null default '',
+        base_path text not null default '',
+        token_ciphertext blob,
+        token_iv blob,
+        key_fingerprint text,
+        updated_at text not null default current_timestamp
+      );
+    `,
+  },
 ]

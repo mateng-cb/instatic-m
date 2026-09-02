@@ -52,6 +52,7 @@ import { handleDashboardRoutes } from './dashboard'
 import { handleFontsRoutes } from './fonts'
 import { handlePublishRoutes } from './publish'
 import { handleStaticExportRoutes } from './staticExport'
+import { handleGithubPublishRoutes } from './githubPublish'
 import { handleExportRoute } from './export'
 import { handleImportPreviewRoute } from './importPreview'
 import { handleImportArchiveRoute } from './importArchive'
@@ -113,6 +114,7 @@ export async function handleCmsRequest(
     ?? (await handleFontsRoutes(req, db, options))
     ?? (await handlePublishRoutes(req, db, options))
     ?? (await handleStaticExportRoutes(req, db, options))
+    ?? (await handleGithubPublishRoutes(req, db, options))
     // Export and import are registered after data routes so their exact paths
     // `/export` and `/import` cannot conflict with any `/data/...` sub-routes.
     // Preview must come before import: `/import/preview` is a longer path that

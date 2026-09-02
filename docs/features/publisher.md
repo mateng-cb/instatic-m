@@ -605,12 +605,63 @@ src/core/persistence/cmsStaticExport.ts
 src/admin/pages/site/toolbar/PublishButton.tsx
 ```
 
-Phase B (push the ZIP to GitHub via Git Data API) is **out of scope** here — see `docs/plans/2026-08-24-static-export-github-publish.md`.
+---
+
+## GitHub publish (Phase B)
+
+Push the same static export tree to a GitHub branch for GitHub Pages. Requires a prior local Publish (same **409** / **422** gates as Phase A export). Operator setup: [docs/deployment/github-pages.md](../deployment/github-pages.md).
+
+### Flow
+
+```text
+Local Publish (Layer A snapshot)
+  → exportPublishedSiteStatic({ pathMode: 'basePath', basePath })
+  → gitDataApiPush (blobs → tree → commit → update ref)
+```
+
+The orchestrator is `publishSiteToGithub` in `server/publish/githubPublish.ts`. It does not change Layer A bake or the Bun-hosted public router.
+
+### API
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/api/cms/github-publish/settings` | Wire-safe view; `pages.publish` |
+| `PUT` | `/admin/api/cms/github-publish/settings` | Upsert repo/branch/`targetDir`/`basePath`/PAT; `pages.publish` |
+| `POST` | `/admin/api/cms/publish-github` | Optional body overrides; `pages.publish` + step-up |
+
+Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `publishToGithub` in `src/core/persistence/cmsGithubPublish.ts`.
+
+POST success: `{ commitSha, repoUrl, branch, report }`.
+
+### Admin UI
+
+- **Publish menu → Publish to GitHub…** — `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` (via `PublishButton.tsx`)
+- **Settings → Publishing** — GitHub Pages block in `src/admin/modals/Settings/sections/PublishingSection.tsx` (defaults + token only; push from Publish menu)
+
+### Code map
+
+```text
+server/publish/githubPublish.ts           — export then push orchestrator
+server/github/gitDataApiPush.ts         — Git Data API (no local git)
+server/github/parseRepoUrl.ts           — repo URL → owner/repo
+server/repositories/githubPublishSettings.ts
+server/handlers/cms/githubPublish.ts
+src/core/persistence/cmsGithubPublish.ts
+```
+
+Push uses `pathMode: 'basePath'` always. Target branch must exist on GitHub before push (no auto-create).
+
+### Out of scope (phase B)
+
+- GitHub App tokens
+- Non-GitHub hosts
+- Auto-enable GitHub Pages via API
 
 ---
 
 ## Related
 
+- [docs/deployment/github-pages.md](../deployment/github-pages.md) — GitHub Pages operator setup (PAT, branch, `basePath`)
 - [docs/architecture.md](../architecture.md) — system overview
 - [docs/server.md](../server.md) — server-side publishing wrappers
 - [docs/features/visual-components.md](visual-components.md) — VC instances + slots
