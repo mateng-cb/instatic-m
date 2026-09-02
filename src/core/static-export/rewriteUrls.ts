@@ -152,14 +152,31 @@ function rewriteSrcsetAttributes(html: string, ctx: RewriteRootAbsolutePathConte
   })
 }
 
-function rewriteCssUrls(html: string, ctx: RewriteRootAbsolutePathContext): string {
-  return html.replace(
+/** Rewrite root-absolute paths inside CSS `url(...)` (incl. `image-set(...)`). */
+export function rewriteStylesheetUrls(
+  css: string,
+  options: RewriteDocumentUrlsOptions,
+): string {
+  const ctx: RewriteRootAbsolutePathContext = {
+    pathMode: options.pathMode,
+    basePath: options.basePath,
+    exportFilePath: options.exportFilePath,
+  }
+  return css.replace(
     /url\(\s*(['"]?)(\/(?!\/)[^'")\s]+)\1\s*\)/g,
     (match, _quote, path) => {
       const rewritten = rewriteRootAbsolutePath(path, ctx)
       return rewritten === path ? match : `url('${rewritten}')`
     },
   )
+}
+
+function rewriteCssUrls(html: string, ctx: RewriteRootAbsolutePathContext): string {
+  return rewriteStylesheetUrls(html, {
+    pathMode: ctx.pathMode,
+    basePath: ctx.basePath,
+    exportFilePath: ctx.exportFilePath,
+  })
 }
 
 function rewriteImportmapScripts(html: string, ctx: RewriteRootAbsolutePathContext): string {

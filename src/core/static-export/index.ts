@@ -13,6 +13,7 @@ export {
   normalizeBasePath,
   rewriteDocumentUrls,
   rewriteRootAbsolutePath,
+  rewriteStylesheetUrls,
 } from './rewriteUrls'
 export type { ExpandHolesHooks, ExpandHolesResult } from './expandHoles'
 export { applyHoleExpansion } from './expandHoles'

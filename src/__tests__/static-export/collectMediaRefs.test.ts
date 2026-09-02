@@ -17,4 +17,9 @@ describe('collectMediaRefs', () => {
     const html = `<img src="/uploads/a.png"><img src="/uploads/a.png"><img src="/_instatic/x.png"><a href="/about">`
     expect(collectMediaRefs(html)).toEqual(['/uploads/a.png'])
   })
+
+  test('collects url() tokens inside image-set()', () => {
+    const css = `footer{background-image:image-set(url(/uploads/footer-w64.webp) 0.06x, url(/uploads/footer-w320.webp) 0.31x)}`
+    expect(collectMediaRefs(css).sort()).toEqual(['/uploads/footer-w320.webp', '/uploads/footer-w64.webp'])
+  })
 })

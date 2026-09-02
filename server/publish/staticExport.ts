@@ -63,15 +63,27 @@ async function walkPublishedHtmlFiles(slotDir: string, base = ''): Promise<strin
   return files
 }
 
+/**
+ * Public URL `/uploads/foo.png` is stored on disk as `{uploadsDir}/foo.png`
+ * (the `/uploads/` prefix is the HTTP mount, not a subdirectory). Same
+ * convention as plugin/font assets: strip `/uploads/` then join uploadsDir.
+ */
+export function diskRelPathForUploadsPublicUrl(publicPath: string): string | null {
+  if (!publicPath.startsWith('/uploads/')) return null
+  const rel = publicPath.slice('/uploads/'.length)
+  return rel.length > 0 ? rel : null
+}
+
 function createExportFsAdapter(uploadsDir: string, outDir: string): ExportFsAdapter {
   return {
     async readPublicAsset(publicPath: string): Promise<Uint8Array | null> {
       if (publicPath.startsWith('/_instatic/')) {
         return readStaticAsset(uploadsDir, publicPath)
       }
-      if (publicPath.startsWith('/uploads/')) {
+      const uploadsRel = diskRelPathForUploadsPublicUrl(publicPath)
+      if (uploadsRel !== null) {
         try {
-          const buffer = await readFile(join(uploadsDir, publicPath.slice(1)))
+          const buffer = await readFile(join(uploadsDir, uploadsRel))
           return new Uint8Array(buffer)
         } catch {
           return null

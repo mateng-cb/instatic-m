@@ -1,7 +1,7 @@
 import { collectMediaRefs } from './collectMediaRefs'
 import { applyHoleExpansion } from './expandHoles'
 import { exportPathForUrl } from './routeLayout'
-import { rewriteDocumentUrls } from './rewriteUrls'
+import { rewriteDocumentUrls, rewriteStylesheetUrls } from './rewriteUrls'
 import { scanHtmlForStaticExportIssues } from './scanDynamic'
 import type { ExportReportItem, PathMode, StaticExportResult } from './types'
 
@@ -153,6 +153,25 @@ function collectImportmapInstaticRefs(value: unknown, seen: Set<string>, refs: s
   }
 }
 
+function isStylesheetPublicPath(publicPath: string): boolean {
+  return publicPath.startsWith('/_instatic/css/') || publicPath.endsWith('.css')
+}
+
+/** Linked stylesheets carry background URLs — scan them before copying assets. */
+async function expandAssetPathsFromLinkedStylesheets(
+  assetPaths: Set<string>,
+  fs: ExportFsAdapter,
+): Promise<void> {
+  for (const cssPath of [...assetPaths].filter(isStylesheetPublicPath)) {
+    const bytes = await fs.readPublicAsset(cssPath)
+    if (!bytes) continue
+    const text = new TextDecoder().decode(bytes)
+    for (const ref of collectMediaRefs(text)) {
+      assetPaths.add(ref)
+    }
+  }
+}
+
 export async function buildExportTree(input: BuildExportTreeInput): Promise<StaticExportResult> {
   const report: ExportReportItem[] = []
   const assetPaths = new Set<string>()
@@ -208,6 +227,8 @@ export async function buildExportTree(input: BuildExportTreeInput): Promise<Stat
     }
   }
 
+  await expandAssetPathsFromLinkedStylesheets(assetPaths, input.fs)
+
   for (const publicPath of assetPaths) {
     const bytes = await input.fs.readPublicAsset(publicPath)
     const relPath = publicPath.slice(1)
@@ -220,7 +241,14 @@ export async function buildExportTree(input: BuildExportTreeInput): Promise<Stat
       continue
     }
     try {
-      await input.fs.writeFile(relPath, bytes)
+      const payload: Uint8Array | string = isStylesheetPublicPath(publicPath)
+        ? rewriteStylesheetUrls(new TextDecoder().decode(bytes), {
+            pathMode: input.pathMode,
+            basePath: input.basePath,
+            exportFilePath: relPath,
+          })
+        : bytes
+      await input.fs.writeFile(relPath, payload)
     } catch (err) {
       throw new StaticExportError(
         `Failed to write export asset ${relPath}`,

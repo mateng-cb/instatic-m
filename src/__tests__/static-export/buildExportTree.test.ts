@@ -122,4 +122,29 @@ describe('buildExportTree', () => {
     expect(result.report.some((item) => item.code === 'missing-asset')).toBe(true)
     expect(fs.files.has('uploads/missing.png')).toBe(false)
   })
+
+  test('collects and rewrites background uploads referenced only in linked css', async () => {
+    const fs = new RecordingFs()
+    const css = `footer{background-image:url(/uploads/footer-bg.webp);background-image:image-set(url(/uploads/footer-w64.webp) 0.5x)}`
+    fs.assets.set('/_instatic/css/site.css', new TextEncoder().encode(css))
+    fs.assets.set('/uploads/footer-bg.webp', new Uint8Array([9, 8, 7]))
+    fs.assets.set('/uploads/footer-w64.webp', new Uint8Array([6, 5, 4]))
+
+    await buildExportTree({
+      outDir: '/tmp/export',
+      pathMode: 'relative',
+      basePath: '',
+      pages: [{ url: '/', html: '<link href="/_instatic/css/site.css">' }],
+      fs,
+      expandHoles: {
+        classify: async () => 'shared',
+        renderShared: async () => '',
+      },
+    })
+
+    expect(fs.files.get('_instatic/css/site.css')).toContain("url('../../uploads/footer-bg.webp')")
+    expect(fs.files.get('_instatic/css/site.css')).toContain("url('../../uploads/footer-w64.webp')")
+    expect(fs.files.get('uploads/footer-bg.webp')).toBe('\x09\x08\x07')
+    expect(fs.files.get('uploads/footer-w64.webp')).toBe('\x06\x05\x04')
+  })
 })
