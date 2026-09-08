@@ -35,18 +35,13 @@
  */
 
 import type { DbClient } from '../../db/client'
-import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type { SourceRequestContext } from '@core/loops/types'
-import { registry } from '@core/module-engine'
-import { loopSourceRegistry } from '@core/loops/registry'
-import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
-import { prefetchLoopData } from '../../publish/loopPrefetch'
+import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { getOrRender } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
-import { stampFormPageTokens } from '../../forms/formRuntime'
+import { isPerVisitorHole, renderHoleFragment } from '../../publish/holeFragment'
 
 const HOLE_RUNTIME_PATH = '/_instatic/hole-runtime.js'
 const HOLE_PATH_PREFIX = '/_instatic/hole/'
@@ -97,63 +92,6 @@ function parseCookies(header: string | null): Record<string, string> {
 function normalizeQuery(params: URLSearchParams): string {
   const entries = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   return new URLSearchParams(entries).toString()
-}
-
-/**
- * Whether a hole must be rendered per visitor (bypass cache, read cookies).
- * Only `perVisitor` loop sources qualify — a module `render()` cannot read
- * cookies, so module holes are always shared-cacheable.
- */
-function isPerVisitorHole(node: PageNode): boolean {
-  if (node.moduleId !== 'base.loop') return false
-  const sourceId = typeof node.props.sourceId === 'string' ? node.props.sourceId : ''
-  if (!sourceId) return false
-  return loopSourceRegistry.get(sourceId)?.perVisitor === true
-}
-
-/**
- * Render one node subtree at request time. Builds the same named frames the
- * full-page publisher builds (route/page/site) plus pre-fetched loop data for
- * loops INSIDE this subtree, then renders fully (no `<instatic-hole>` recursion).
- */
-async function renderHoleFragment(
-  nodeId: string,
-  page: Page,
-  site: SiteDocument,
-  db: DbClient,
-  pageUrl: URL,
-  request: SourceRequestContext,
-): Promise<string> {
-  const route = buildRouteFrame(pageUrl.toString())
-  const loopData = await prefetchLoopData(page, site, db, pageUrl, {
-    request,
-    rootNodeId: nodeId,
-  })
-  const config: RenderConfig = {
-    page,
-    site,
-    registry,
-    breakpointId: undefined,
-    loopData,
-    templateContext: {
-      entryStack: [],
-      page: buildPageFrame(page),
-      site: buildSiteFrame(site),
-      route,
-    },
-    // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
-  }
-  const acc: RenderAccumulators = {
-    cssMap: new Map(),
-    jsMap: new Map(),
-    infiniteLoopIds: new Set(),
-    holeNodeIds: new Set(),
-    cspSources: new Map(),
-  }
-  // Hole fragments bypass the published-HTML pipeline, so CMS forms inside
-  // them would never receive their page token. Stamp here — tokens are
-  // stateless HMAC signatures, safe to store in the Layer B fragment cache.
-  return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
 }
 
 /**

@@ -78,7 +78,7 @@ type AcceptedMediaMime = keyof typeof EXTENSION_FOR_MIME
  * accepts bytes (the HTTP media route, the MCP upload tool). Callers pass it
  * as the `maxBytes` policy knob so the limit lives in exactly one place.
  */
-export const MAX_MEDIA_BYTES = 50 * 1024 * 1024
+export const MAX_MEDIA_BYTES = 15 * 1024 * 1024
 
 export const IMAGE_MIMES: ReadonlyArray<AcceptedMediaMime> = [
   'image/jpeg',

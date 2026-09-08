@@ -60,7 +60,7 @@ import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/pas
 
 /**
  * Avatars are capped at 5 MB — full-resolution camera output is wildly
- * oversized for a 96×96 portrait and the library cap (50 MB) is a footgun
+ * oversized for a 96×96 portrait and the library cap (15 MB) is a footgun
  * here. 5 MB still comfortably accommodates a 4000×4000 PNG.
  */
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024

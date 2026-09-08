@@ -8,10 +8,10 @@
  *
  * Dependency direction: MUST NOT import from editor/.
  */
-// checkSizeLimit — soft (10 MB) and hard (50 MB) upload limits
+// checkSizeLimit — soft (10 MB) and hard (15 MB) upload limits
 
 const SOFT_LIMIT_BYTES = 10 * 1024 * 1024  // 10 MB
-const HARD_LIMIT_BYTES = 50 * 1024 * 1024  // 50 MB
+const HARD_LIMIT_BYTES = 15 * 1024 * 1024  // 15 MB
 
 interface SizeLimitResult {
   ok: boolean
@@ -24,15 +24,15 @@ interface SizeLimitResult {
  *
  * @param sizeBytes  File size in bytes
  * @returns  { ok: true, level: 'none' }          — under 10 MB, no warning
- *           { ok: true, level: 'soft', message }  — 10–49 MB, soft warning
- *           { ok: false, level: 'hard', message } — ≥50 MB, hard limit exceeded
+ *           { ok: true, level: 'soft', message }  — 10–15 MB, soft warning
+ *           { ok: false, level: 'hard', message } — ≥15 MB, hard limit exceeded
  */
 export function checkSizeLimit(sizeBytes: number): SizeLimitResult {
   if (sizeBytes >= HARD_LIMIT_BYTES) {
     return {
       ok: false,
       level: 'hard',
-      message: `File exceeds the 50 MB hard limit (${formatBytes(sizeBytes)}). Please reduce the file size before uploading.`,
+      message: `File exceeds the 15 MB hard limit (${formatBytes(sizeBytes)}). Please reduce the file size before uploading.`,
     }
   }
   if (sizeBytes >= SOFT_LIMIT_BYTES) {

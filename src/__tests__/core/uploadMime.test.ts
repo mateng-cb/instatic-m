@@ -17,16 +17,16 @@ describe('checkSizeLimit', () => {
     expect(result.message).toBeTruthy()
   })
 
-  it('still allows files just under 50 MB', () => {
-    const result = checkSizeLimit(50 * MB - 1)
+  it('still allows files just under 15 MB', () => {
+    const result = checkSizeLimit(15 * MB - 1)
     expect(result.ok).toBe(true)
     expect(result.level).toBe('soft')
   })
 
-  it('blocks files at or above 50 MB', () => {
-    const result = checkSizeLimit(50 * MB)
+  it('blocks files at or above 15 MB', () => {
+    const result = checkSizeLimit(15 * MB)
     expect(result.ok).toBe(false)
     expect(result.level).toBe('hard')
-    expect(result.message).toMatch(/50.?MB/i)
+    expect(result.message).toMatch(/15.?MB/i)
   })
 })

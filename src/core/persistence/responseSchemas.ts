@@ -385,3 +385,68 @@ export const CmsPluginScheduleRunOutcomeEnvelopeSchema = Type.Object(
   },
   { additionalProperties: true },
 )
+
+// ---------------------------------------------------------------------------
+// cmsGithubPublish.ts — wire shapes mirror server/repositories/githubPublishSettings
+// and server/publish/githubPublish (PublishSiteToGithubResult).
+// ---------------------------------------------------------------------------
+
+export const ExportReportItemSchema = Type.Object({
+  severity: Type.Union([
+    Type.Literal('error'),
+    Type.Literal('warning'),
+    Type.Literal('info'),
+  ]),
+  code: Type.String(),
+  message: Type.String(),
+  pageUrl: Type.Optional(Type.String()),
+  nodeId: Type.Optional(Type.String()),
+})
+
+export type ExportReportItem = Static<typeof ExportReportItemSchema>
+
+export const GithubPublishSettingsViewSchema = Type.Object({
+  repoUrl: Type.String(),
+  owner: Type.String(),
+  repo: Type.String(),
+  branch: Type.String(),
+  targetDir: Type.String(),
+  basePath: Type.String(),
+  hasToken: Type.Boolean(),
+  keyFingerprintCurrent: Type.Boolean(),
+  updatedAt: Type.Union([Type.String(), Type.Null()]),
+})
+
+export type GithubPublishSettingsView = Static<typeof GithubPublishSettingsViewSchema>
+
+export const PublishGithubResultSchema = Type.Object({
+  commitSha: Type.String(),
+  repoUrl: Type.String(),
+  branch: Type.String(),
+  report: Type.Array(ExportReportItemSchema),
+})
+
+export type PublishGithubResult = Static<typeof PublishGithubResultSchema>
+
+export const GithubPublishProgressSchema = Type.Object({
+  running: Type.Boolean(),
+  phase: Type.Union([
+    Type.Literal('exporting'),
+    Type.Literal('uploading'),
+    Type.Literal('finalizing'),
+    Type.Literal('done'),
+  ]),
+  total: Type.Integer(),
+  uploaded: Type.Integer(),
+  currentPath: Type.String(),
+  startedAt: Type.Integer(),
+  updatedAt: Type.Integer(),
+})
+
+export type GithubPublishProgress = Static<typeof GithubPublishProgressSchema>
+
+export const GithubPublishProgressResponseSchema = Type.Object({
+  progress: Type.Union([GithubPublishProgressSchema, Type.Null()]),
+})
+
+export type GithubPublishProgressResponse = Static<typeof GithubPublishProgressResponseSchema>

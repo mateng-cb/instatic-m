@@ -5,6 +5,14 @@ export {
   resolveCmsRuntimeDependencies,
   validateCmsRuntimeScripts,
 } from './cmsRuntime'
+export {
+  getGithubPublishProgress,
+  getGithubPublishSettings,
+  publishToGithub,
+  putGithubPublishSettings,
+} from './cmsGithubPublish'
+export type { GithubPublishProgress } from './responseSchemas'
+export { downloadStaticExport } from './cmsStaticExport'
 export type { CmsRuntimePreviewResult } from './cmsRuntime'
 export { listCmsMediaAssets } from './cmsMedia'
 export type { CmsMediaAsset } from './cmsMedia'

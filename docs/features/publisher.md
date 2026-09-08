@@ -571,8 +571,120 @@ This is rare and requires architectural review — most "new behavior" fits with
 
 ---
 
+## Static export (Phase A)
+
+Portable static export is a **separate pipeline** from local Publish. It reads the already-published slot (`uploads/published/current/`), rewrites URLs for offline / subpath hosting, and returns a ZIP. It does **not** change how the Bun-hosted public site is published.
+
+### Prerequisites and gating
+
+- The site must already have a successful local Publish (`published/current` readable). Otherwise the API returns **409**.
+- Same blast radius as publish: capability `pages.publish` + step-up.
+- Admin entry: Publish menu → **Export static site…** (defaults to `pathMode: 'relative'`).
+
+### API
+
+```http
+POST /admin/api/cms/export-static
+Content-Type: application/json
+
+{
+  "pathMode": "relative" | "basePath",
+  "basePath": "/repo-name"
+}
+```
+
+| Result | Meaning |
+|--------|---------|
+| `200` `application/zip` | Success. `Content-Disposition: attachment; filename="instatic-static-export.zip"` |
+| `400` | `pathMode: 'basePath'` without a non-empty `basePath` |
+| `401` / `403` | Unauthenticated / missing `pages.publish` |
+| `409` | Site has not been published yet |
+| `422` | Export aborted — typically a per-visitor dynamic hole (`report` included) |
+
+Client helper: `downloadStaticExport({ pathMode, basePath? })` in `@core/persistence`.
+
+### Behaviour (locked product decisions)
+
+| Topic | Behaviour |
+|-------|-----------|
+| Routes | Directory style: `/` → `index.html`, `/about` → `about/index.html` |
+| Paths | ZIP default `relative`; `basePath` prefixes root-absolute URLs for project Pages |
+| Media | Only `/uploads/...` paths still referenced after rewrite are copied |
+| Shared holes | Expanded to a snapshot and inlined; hole runtime removed when no holes remain |
+| Per-visitor holes | Fail the whole export (**422**) |
+| CMS forms | Still exported; `manifest.json` records warnings — submits will not work on static hosts |
+
+### Code map
+
+```text
+src/core/static-export/     — pure export tree builders (rewrite, scan, expand, collect, layout)
+server/publish/staticExport.ts + staticExportHoles.ts + holeFragment.ts
+server/handlers/cms/staticExport.ts
+src/core/persistence/cmsStaticExport.ts
+src/admin/pages/site/toolbar/PublishButton.tsx
+```
+
+---
+
+## GitHub publish (Phase B)
+
+Push the same static export tree to a GitHub branch for GitHub Pages. Requires a prior local Publish (same **409** / **422** gates as Phase A export). Operator setup: [docs/deployment/github-pages.md](../deployment/github-pages.md).
+
+### Flow
+
+```text
+Local Publish (Layer A snapshot)
+  → exportPublishedSiteStatic({ pathMode: 'basePath', basePath })
+  → gitDataApiPush (blobs → tree → commit → update ref)
+```
+
+The orchestrator is `publishSiteToGithub` in `server/publish/githubPublish.ts`. It does not change Layer A bake or the Bun-hosted public router.
+
+### API
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/api/cms/github-publish/settings` | Wire-safe view; `pages.publish` |
+| `PUT` | `/admin/api/cms/github-publish/settings` | Upsert repo/branch/`targetDir`/`basePath`/PAT; `pages.publish` |
+| `GET` | `/admin/api/cms/github-publish/progress` | In-flight publish progress (single-slot in-memory registry); `pages.publish` |
+| `POST` | `/admin/api/cms/publish-github` | Optional body overrides (`branch`/`targetDir`/`basePath`/`commitMessage`); `pages.publish` + step-up |
+
+Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `publishToGithub`, `getGithubPublishProgress` in `src/core/persistence/cmsGithubPublish.ts`.
+
+The push uploads blobs **4 at a time**, each GitHub API request carrying a **60 s timeout** (`AbortSignal.timeout`), so a black-holed connection fails fast instead of hanging the publish forever. While the POST is pending, the dialog polls the progress endpoint (1 s interval) and shows `Uploading files 45/132 — path` / `Creating commit on GitHub…`. Every push also writes a root `.nojekyll` blob — GitHub Pages' Jekyll build would otherwise drop every `_instatic/` asset.
+
+POST success: `{ commitSha, repoUrl, branch, report }`.
+
+### Admin UI
+
+- **Publish menu → Publish to GitHub…** — `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` (via `PublishButton.tsx`)
+- **Settings → Publishing** — GitHub Pages block in `src/admin/modals/Settings/sections/PublishingSection.tsx` (defaults + token only; push from Publish menu)
+
+### Code map
+
+```text
+server/publish/githubPublish.ts           — export then push orchestrator
+server/publish/githubPublishProgress.ts  — in-memory progress registry (single slot)
+server/github/gitDataApiPush.ts         — Git Data API (no local git)
+server/github/parseRepoUrl.ts           — repo URL → owner/repo
+server/repositories/githubPublishSettings.ts
+server/handlers/cms/githubPublish.ts
+src/core/persistence/cmsGithubPublish.ts
+```
+
+Push uses `pathMode: 'basePath'` always. Target branch must exist on GitHub before push (no auto-create).
+
+### Out of scope (phase B)
+
+- GitHub App tokens
+- Non-GitHub hosts
+- Auto-enable GitHub Pages via API
+
+---
+
 ## Related
 
+- [docs/deployment/github-pages.md](../deployment/github-pages.md) — GitHub Pages operator setup (PAT, branch, `basePath`)
 - [docs/architecture.md](../architecture.md) — system overview
 - [docs/server.md](../server.md) — server-side publishing wrappers
 - [docs/features/visual-components.md](visual-components.md) — VC instances + slots

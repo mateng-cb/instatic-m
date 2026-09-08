@@ -5,7 +5,7 @@
  *                                                  (?trash=1 → trashed items only)
  *                                                  (`media.read`)
  *   POST   /admin/api/cms/media                — upload a new image/video
- *                                                  (multipart `file=`, max 50MB)
+ *                                                  (multipart `file=`, max 15MB)
  *                                                  (`media.write`)
  *   PATCH  /admin/api/cms/media/:id            — rename / edit metadata
  *                                                  (`media.write`)
@@ -159,7 +159,7 @@ async function handleUploadMedia(req: Request, db: DbClient): Promise<Response> 
     role: 'original',
     uploadedByUserId: user.id,
     ...(altText !== undefined ? { altText } : {}),
-    oversizedMessage: 'File exceeds the 50 MB hard limit',
+    oversizedMessage: 'File exceeds the 15 MB hard limit',
     unsupportedMessage: 'Only JPEG, PNG, GIF, WebP, SVG, MP4, WebM, and web font (WOFF, WOFF2, TTF, OTF) files can be uploaded',
   })
   if (result instanceof Response) return result
@@ -199,7 +199,7 @@ async function handleReplaceMedia(
     allowedMimes: MEDIA_LIBRARY_MIMES,
     role: 'original',
     uploadedByUserId: user.id,
-    oversizedMessage: 'File exceeds the 50 MB hard limit',
+    oversizedMessage: 'File exceeds the 15 MB hard limit',
     unsupportedMessage: 'Only JPEG, PNG, GIF, WebP, SVG, MP4, WebM, and web font (WOFF, WOFF2, TTF, OTF) files can be uploaded',
   })
   if (result instanceof Response) return result

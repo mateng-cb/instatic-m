@@ -295,7 +295,7 @@ interface WalkResult {
  * decision runs through {@link classifyNode}, so the rules cannot drift between
  * the pre-pass and the main pass, or between layers.
  */
-function findDynamicNodesWithReasons(
+export function findDynamicNodesWithReasons(
   page: Page,
   site: SiteDocument,
   registry: IModuleRegistry,

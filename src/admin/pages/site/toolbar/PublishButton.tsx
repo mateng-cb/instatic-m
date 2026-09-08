@@ -1,20 +1,42 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
-import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
+import {
+  downloadStaticExport,
+  getCmsPublishStatus,
+  publishCmsDraft,
+} from '@core/persistence'
+import { ApiError } from '@core/http'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
+import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
+import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
+import { GithubPublishDialog } from '@admin/modals/GithubPublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
+
+const STATIC_EXPORT_FILENAME = 'instatic-static-export.zip'
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
 
@@ -39,7 +61,9 @@ export function PublishButton({
   const openPreview = useEditorStore((s) => s.openPreview)
   const { runStepUp } = useStepUp()
   const [state, setState] = useState<PublishState>('idle')
+  const [exporting, setExporting] = useState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * The `site` reference captured when the button entered the "published"
@@ -77,7 +101,9 @@ export function PublishButton({
     }
 
     void loadPublishStatus()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [enabled, siteId])
 
   useEffect(() => {
@@ -128,7 +154,7 @@ export function PublishButton({
       setState('published')
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) {
-        // User dismissed the step-up dialog — return the button to its
+        // User dismissed the step-up dialog \u2014 return the button to its
         // resting state without surfacing an error message; this is the
         // same UX every other step-up-gated action uses.
         setState('idle')
@@ -146,10 +172,53 @@ export function PublishButton({
     }
   }
 
+  const handleExportStatic = async () => {
+    if (!site || !enabled || exporting) return
+
+    try {
+      const status = await getCmsPublishStatus()
+      if (!status.hasPublishedVersion) {
+        pushToast({
+          kind: 'error',
+          title: 'Export failed',
+          body: 'Publish the site first, then export the static snapshot.',
+          location: 'site-editor',
+        })
+        return
+      }
+
+      setExporting(true)
+      // Same blast radius as publish \u2014 reuse step-up retry for the ZIP download.
+      const blob = await runStepUp(() => downloadStaticExport({ pathMode: 'relative' }))
+      triggerBlobDownload(blob, STATIC_EXPORT_FILENAME)
+      pushToast({
+        kind: 'success',
+        title: 'Static site exported',
+        body: 'Download started. Form submit warnings (if any) are listed in the ZIP manifest.json.',
+        location: 'site-editor',
+      })
+    } catch (err) {
+      if (err instanceof Error && err.message === StepUpCancelledMessage) return
+      console.error('[toolbar] Static export failed:', err)
+      const body =
+        err instanceof ApiError && err.status === 422
+          ? getErrorMessage(err, 'This site has dynamic content that cannot be fully static.')
+          : getErrorMessage(err, 'Unknown static export error')
+      pushToast({
+        kind: 'error',
+        title: 'Export failed',
+        body,
+        location: 'site-editor',
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const isPublishing = state === 'publishing'
   // Block publish until the client is synced: local edits live only in this
   // client's Y docs until they reach the server, and the server-side publish
-  // flush can only bake what it has received. Offline/connecting/error → the
+  // flush can only bake what it has received. Offline/connecting/error \u2192 the
   // status chip states the reason inline (never available-then-blocked). An
   // absent saveStatus (collab info unavailable) doesn't gate.
   const notSynced = saveStatus ? saveStatus.state !== 'synced' : false
@@ -174,7 +243,7 @@ export function PublishButton({
       ariaLabel: syncError,
     } :
     saveStatus?.state === 'offline' ? {
-      label: 'Offline — reconnecting',
+      label: 'Offline \u2014 reconnecting',
       tone: 'warning' as const,
     } :
     saveStatus?.state === 'connecting' || saveStatus?.state === 'loading' ? {
@@ -206,15 +275,33 @@ export function PublishButton({
     {
       // Per-page scheduling. The Site editor's primary Publish button
       // still publishes ALL draft pages at once (existing behaviour);
-      // the schedule action targets the currently-active page only —
+      // the schedule action targets the currently-active page only \u2014
       // matching what the user sees in the editor when they make the
       // decision.
       id: 'schedule-publish',
-      label: 'Schedule publish…',
+      label: 'Schedule publish\u2026',
       icon: CalendarSolidIcon,
       disabled: !activePage || runtimeErrorCount > 0 || runtimeValidationPending,
       onSelect: () => setScheduleDialogOpen(true),
       testId: 'toolbar-schedule-publish-action',
+    },
+    {
+      id: 'export-static',
+      label: exporting ? 'Exporting\u2026' : 'Export static site\u2026',
+      icon: exporting ? LoaderIcon : PackageSolidIcon,
+      disabled: !site || exporting,
+      onSelect: () => {
+        void handleExportStatic()
+      },
+      testId: 'toolbar-export-static-action',
+    },
+    {
+      id: 'publish-github',
+      label: 'Publish to GitHub\u2026',
+      icon: ExternalLinkSolidIcon,
+      disabled: !site,
+      onSelect: () => setGithubDialogOpen(true),
+      testId: 'toolbar-publish-github-action',
     },
     {
       id: 'preview',
@@ -226,7 +313,7 @@ export function PublishButton({
     },
     // "Open live page" used to live here. It now has a dedicated
     // toolbar icon button (`OpenLivePageButton`) next to the avatar so
-    // it's reachable on every admin route — not just the Site editor.
+    // it's reachable on every admin route \u2014 not just the Site editor.
   ]
 
   return (
@@ -263,7 +350,7 @@ export function PublishButton({
           onClose={() => setScheduleDialogOpen(false)}
           rowId={activePage.id}
           // The editor's in-memory Page shape doesn't carry the row's
-          // scheduledPublishAt — that lives on the CMS row, not in the
+          // scheduledPublishAt \u2014 that lives on the CMS row, not in the
           // site document. Future enhancement: read it from a
           // useCmsPageStatus(activePage.id) hook so re-opening the
           // dialog pre-fills with the current schedule. For now we
@@ -273,12 +360,16 @@ export function PublishButton({
           onScheduled={() => {
             // Re-fetch publish status so the toolbar can transition out
             // of "Draft saved" / "Unsaved" into the published state if
-            // the row picked up. Cheap call — the same endpoint the
+            // the row picked up. Cheap call \u2014 the same endpoint the
             // mount-time useEffect uses.
             void getCmsPublishStatus().catch(() => undefined)
           }}
         />
       )}
+      <GithubPublishDialog
+        open={githubDialogOpen}
+        onClose={() => setGithubDialogOpen(false)}
+      />
     </>
   )
 }
