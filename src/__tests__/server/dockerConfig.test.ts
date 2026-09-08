@@ -55,16 +55,14 @@ describe('self-host docker config', () => {
 
   it('defines a production compose stack with health checks and persistent data', () => {
     const compose = readFileSync('compose.prod.yml', 'utf8')
-    const buildOverride = readFileSync('compose.build.yml', 'utf8')
 
-    expect(compose).toContain('ghcr.io/corebunch/instatic:latest')
-    expect(compose).not.toContain('build:')
+    expect(compose).toContain('instatic-m:local')
+    expect(compose).toContain('build:')
+    expect(compose).toContain('dockerfile: Dockerfile')
     expect(compose).toContain('restart: unless-stopped')
     expect(compose).toContain('condition: service_healthy')
     expect(compose).toContain('postgres_data:')
     expect(compose).toContain('uploads:')
-    expect(buildOverride).toContain('build:')
-    expect(buildOverride).toContain('dockerfile: Dockerfile')
   })
 
   it('lets compose.prod.yml load without an .env (so SQLite mode is zero-config) while making the Postgres password placeholder loudly unsafe', () => {

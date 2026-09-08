@@ -1,17 +1,17 @@
 # Security Policy
 
-Instatic is pre-1.0 and not yet recommended for hostile multi-user environments without careful operator review. Security reports are still taken seriously.
+Instatic-M is a self-hosted fork and not recommended for hostile multi-user environments without careful operator review. Security reports are still taken seriously.
 
 ## Supported Versions
 
-Security fixes target the latest `main` branch and the latest tagged release. Before 1.0, older tags are not maintained as long-term supported branches.
+Security fixes target the latest `main` branch and the latest tagged release.
 
 ## Reporting A Vulnerability
 
 Use GitHub's private vulnerability reporting for this repository:
 
 ```txt
-https://github.com/corebunch/instatic/security/advisories/new
+https://github.com/mateng-cb/instatic-m/security/advisories/new
 ```
 
 If private vulnerability reporting is unavailable, open a minimal public issue asking for a private reporting channel. Do not include exploit details, secret material, vulnerable URLs, or proof-of-concept payloads in that public issue.
@@ -19,7 +19,7 @@ If private vulnerability reporting is unavailable, open a minimal public issue a
 Helpful reports include:
 
 - affected version, commit, or Docker image tag
-- deployment mode, for example SQLite Compose, Postgres Compose, Railway, or Render
+- deployment mode, for example SQLite Compose, Postgres Compose, or GitHub Pages static export
 - clear reproduction steps
 - impact and expected attacker capabilities
 - any relevant logs with secrets redacted

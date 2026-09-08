@@ -37,7 +37,7 @@ export function getHelpCommands(): Command[] {
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
-        window.open('https://github.com/corebunch/instatic/blob/main/docs/', '_blank', 'noopener,noreferrer')
+        window.open('https://github.com/mateng-cb/instatic-m/blob/main/docs/', '_blank', 'noopener,noreferrer')
       },
     },
 
@@ -51,7 +51,7 @@ export function getHelpCommands(): Command[] {
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
-        window.open('https://github.com/corebunch/instatic/issues/new', '_blank', 'noopener,noreferrer')
+        window.open('https://github.com/mateng-cb/instatic-m/issues/new', '_blank', 'noopener,noreferrer')
       },
     },
 
@@ -66,7 +66,7 @@ export function getHelpCommands(): Command[] {
       run: (ctx) => {
         ctx.closeSpotlight()
         // Navigate to About section in settings when available, else open docs
-        window.open('https://github.com/corebunch/instatic', '_blank', 'noopener,noreferrer')
+        window.open('https://github.com/mateng-cb/instatic-m', '_blank', 'noopener,noreferrer')
       },
     },
 

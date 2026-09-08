@@ -10,13 +10,12 @@ Set `DOMAIN`, keep `Caddyfile` beside `compose.tls.yml`, then layer the TLS over
 
 ```sh
 # SQLite + TLS
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml up -d --build
 
 # Postgres + TLS
-docker compose -f compose.prod.yml -f compose.tls.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.tls.yml up -d --build
 ```
 
-When using an accessible published image, omit `compose.build.yml` and `--build`.
 
 ## Prerequisites
 
@@ -40,13 +39,13 @@ For Postgres installs, keep the same `POSTGRES_PASSWORD` used by [vps.md](vps.md
 **Postgres + TLS:**
 
 ```sh
-docker compose -f compose.prod.yml -f compose.tls.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.tls.yml up -d --build
 ```
 
 **SQLite + TLS:**
 
 ```sh
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml up -d --build
 ```
 
 The first request to `https://cms.example.com` triggers cert issuance (takes a few seconds). Cert state persists in the `caddy_data` named volume across restarts and re-deploys.
@@ -150,14 +149,14 @@ SQLite:
 
 ```sh
 docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml down
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.sqlite.yml up -d --build
 ```
 
 Postgres:
 
 ```sh
 docker compose -f compose.prod.yml -f compose.tls.yml down
-docker compose -f compose.prod.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml up -d --build
 ```
 
 The certs in `caddy_data` are preserved; if you re-enable TLS later, Caddy reuses the existing cert if it's still valid.

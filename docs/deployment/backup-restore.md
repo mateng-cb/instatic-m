@@ -10,8 +10,6 @@ A complete backup includes the database and the uploaded media. The procedure de
 |---|---|---|
 | VPS SQLite Compose | Copy `/app/data/cms.db` from the `data` volume | Archive the `uploads` volume |
 | VPS Postgres Compose | `pg_dump` from the `postgres` service | Archive the `uploads` volume |
-| Railway SQLite | Back up the app volume mounted at `/app/storage` | Same app volume, under `/app/storage/uploads` |
-| Railway Postgres | Back up the Postgres service volume/database | Back up the app volume mounted at `/app/storage` |
 
 ## Postgres mode — backup
 
@@ -175,21 +173,13 @@ Restore uploads exactly as in Postgres mode.
 
 ## Hosted Provider Backups
 
-When Instatic runs on a provider that offers managed Postgres (Railway Postgres, RDS, Supabase, Render Postgres, Fly Postgres, etc.), the provider's snapshot, volume backup, or point-in-time tooling is the recommended first backup path. Keep an independent `pg_dump` schedule when you need provider-independent recovery.
-
-Railway-specific paths:
-
-| Template | Database path | Upload path |
-|---|---|---|
-| SQLite | `/app/storage/data/cms.db` | `/app/storage/uploads` |
-| Postgres | Railway Postgres service | `/app/storage/uploads` |
+When Instatic runs on a provider that offers managed Postgres (RDS, Supabase, Render Postgres, Fly Postgres, etc.), the provider's snapshot, volume backup, or point-in-time tooling is the recommended first backup path. Keep an independent `pg_dump` schedule when you need provider-independent recovery.
 
 For uploads, back up whatever disk or volume is mounted at `UPLOADS_DIR`.
 
 ## Related
 
 - [deployment/README.md](README.md) — deployment overview
-- [railway.md](railway.md) — Railway volume paths
 - [vps.md](vps.md) — VPS Compose volume names
 - `compose.prod.yml` — Postgres and uploads volume names
 - `compose.sqlite.yml` — SQLite data volume

@@ -10,35 +10,14 @@ The VPS stack uses the same production image as managed platforms. Compose only 
 
 | Mode | Source-build command | Containers | Persistent volumes |
 |---|---|---|---|
-| SQLite | `docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml up -d --build` | `app` | `data`, `uploads` |
-| Postgres | `docker compose -f compose.prod.yml -f compose.build.yml up -d --build` | `app`, `postgres` | `postgres_data`, `uploads` |
-| SQLite + TLS | `docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml -f compose.build.yml up -d --build` | `app`, `caddy` | `data`, `uploads`, `caddy_data` |
-| Postgres + TLS | `docker compose -f compose.prod.yml -f compose.tls.yml -f compose.build.yml up -d --build` | `app`, `postgres`, `caddy` | `postgres_data`, `uploads`, `caddy_data` |
+| SQLite | `docker compose -f compose.prod.yml -f compose.sqlite.yml up -d --build` | `app` | `data`, `uploads` |
+| Postgres | `docker compose -f compose.prod.yml up -d --build` | `app`, `postgres` | `postgres_data`, `uploads` |
+| SQLite + TLS | `docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml up -d --build` | `app`, `caddy` | `data`, `uploads`, `caddy_data` |
+| Postgres + TLS | `docker compose -f compose.prod.yml -f compose.tls.yml up -d --build` | `app`, `postgres`, `caddy` | `postgres_data`, `uploads`, `caddy_data` |
 
 SQLite is the default for most single-site installs. Postgres is for multiple simultaneous admin writers, horizontal app scale, or operators who already want Postgres.
 
-When using a published image, set `INSTATIC_IMAGE` and omit `compose.build.yml` plus `--build`.
 Before adding AI provider credentials, saving plugin secret settings, or enabling TOTP MFA in production, set `INSTATIC_SECRET_KEY` to the output of `bun run scripts/generate-secret-key.ts`.
-
-## Install From A Release Bundle
-
-1. Download `instatic-<version>-release-bundle.tar.gz` from the GitHub Release.
-2. Unpack it on the server.
-3. Choose SQLite or Postgres.
-
-SQLite:
-
-```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:<version> docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
-```
-
-Postgres:
-
-```sh
-cp .env.production.example .env
-# Set POSTGRES_PASSWORD and INSTATIC_SECRET_KEY in .env.
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:<version> docker compose -f compose.prod.yml up -d
-```
 
 ## Prerequisites
 
@@ -49,11 +28,11 @@ Install Docker Engine and Docker Compose on the VPS. If using TLS, point a domai
 Use a source checkout:
 
 ```sh
-git clone https://github.com/CoreBunch/Instatic.git
-cd instatic
+git clone https://github.com/mateng-cb/instatic-m.git
+cd instatic-m
 ```
 
-For plain SQLite without TLS, source builds use `compose.prod.yml`, `compose.sqlite.yml`, and `compose.build.yml`. Image-pull installs use only `compose.prod.yml` and `compose.sqlite.yml`, but they still need the Compose files from a checkout or release bundle.
+Compose builds the image from the checkout — `compose.prod.yml` carries the build context, and the optional overlays only add SQLite persistence or the Caddy TLS proxy.
 
 ## SQLite Install
 
@@ -69,7 +48,7 @@ Paste the printed key into `.env` as `INSTATIC_SECRET_KEY`.
 Run:
 
 ```sh
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.sqlite.yml up -d --build
 ```
 
 This starts one `app` container. `compose.sqlite.yml` disables the Postgres service and sets:
@@ -117,7 +96,7 @@ openssl rand -hex 24
 Start the stack:
 
 ```sh
-docker compose -f compose.prod.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml up -d --build
 ```
 
 This starts `app` and `postgres`. `compose.prod.yml` sets the app's `DATABASE_URL` to the bundled Postgres service:
@@ -148,13 +127,13 @@ Caddy terminates TLS and forwards plain HTTP to the container, so the container'
 Run SQLite + TLS:
 
 ```sh
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.tls.yml up -d --build
 ```
 
 Run Postgres + TLS:
 
 ```sh
-docker compose -f compose.prod.yml -f compose.tls.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.tls.yml up -d --build
 ```
 
 See [tls-caddy.md](tls-caddy.md) for the Caddy details.
@@ -179,14 +158,14 @@ Update a source-build install:
 
 ```sh
 git pull
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml -f compose.sqlite.yml up -d --build
 ```
 
 For Postgres source-build installs, omit `compose.sqlite.yml`:
 
 ```sh
 git pull
-docker compose -f compose.prod.yml -f compose.build.yml up -d --build
+docker compose -f compose.prod.yml up -d --build
 ```
 
 Update an image-pull install:

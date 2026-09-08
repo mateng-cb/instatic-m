@@ -6,19 +6,11 @@
 
 A self-hosted CMS where the visual editor, content engine, and publisher all live in one Bun server — and the pages it ships are clean enough to read in view-source.
 
-<p>
-  <a href="https://trendshift.io/repositories/66792?utm_source=repository-badge&utm_medium=badge&utm_campaign=badge-repository-66792" target="_blank" rel="noopener noreferrer">
-    <img src="https://trendshift.io/api/badge/repositories/66792" alt="CoreBunch/Instatic | Trendshift" width="250" height="55">
-  </a>
-</p>
-
-[![Release](https://img.shields.io/github/v/release/corebunch/instatic?color=black&labelColor=black)](https://github.com/corebunch/instatic/releases)
-[![GitHub stars](https://img.shields.io/github/stars/corebunch/instatic?style=flat&label=stars&labelColor=555&color=ffd43b)](https://github.com/corebunch/instatic/stargazers)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black?labelColor=black&color=blue)](LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black?labelColor=black&color=f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-everywhere-black?labelColor=black&color=3178c6)](https://www.typescriptlang.org/)
 
-[One-Click Deploy](#deploy-in-one-click) · [Quick Start](#quick-start) · [Docs](docs/README.md) · [Plugins](docs/features/plugin-system.md) · [Roadmap](#early-on-purpose)
+[Deploy](#deploy) · [Quick Start](#quick-start) · [Docs](docs/README.md) · [Plugins](docs/features/plugin-system.md) · [For Developers](#for-developers)
 
 <br>
 
@@ -40,40 +32,27 @@ What comes out the other end is the part most builders quietly compromise on: pl
 
 <br>
 
-## Deploy in one click
+## Deploy
 
-Railway is the fastest way to get Instatic live. Pick a template, hit the button, wait about two minutes. That's it. It generates the secret keys, attaches the storage volume, and sets up the health checks on its own. You never open a terminal.
+Instatic is a single Bun server in one Docker image, built from this repository — bring your own hardware:
 
-<div align="center">
-
-<img src="docs/assets/readme/railway-deploy.gif" alt="Deploying Instatic to Railway — from template to a live CMS in under a minute" width="80%">
-
-*One minute to live. Unedited.*
-
-</div>
-
-<br>
-
-| Provider | Database | Best for | Deploy |
+| Provider | Database | Best for | Guide |
 |---|---|---|---|
-| **Railway** · *Recommended* | SQLite | A single site — blog, portfolio, small business | [Deploy →](https://railway.com/deploy/instatic-cms-sqlite?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
-| **Railway** | Postgres | Multiple authors, managed backups, room to grow | [Deploy →](https://railway.com/deploy/instatic-cms-postgres?referralCode=Zm9bVJ&utm_medium=integration&utm_source=template&utm_campaign=generic) |
-| **Render** | SQLite or Postgres | Teams that prefer Render services, disks, and managed Postgres | [Guide →](docs/deployment/render.md) |
-| **Docker / VPS** | SQLite or Postgres | Bring-your-own server, Caddy TLS, custom backup policy | [Guide →](docs/deployment/vps.md) |
+| **Docker / VPS** | SQLite or Postgres | Bring-your-own server, Caddy TLS, custom backup policy | [vps.md](docs/deployment/vps.md) |
+| **Any Docker host** | SQLite or external Postgres | Generic image contract and `docker run` examples | [docker-image.md](docs/deployment/docker-image.md) |
+| **GitHub Pages** | N/A — static export | Zero-server hosting of the exported static site | [github-pages.md](docs/deployment/github-pages.md) |
 
 SQLite is the right default for most sites. Reach for Postgres when you've got a team of authors or want managed database backups.
 
 ### Updating is just a redeploy
 
-When a new Instatic version is available, update by redeploying the latest image. Your database and uploads stay on the attached storage, so the app container can be replaced without rebuilding the site from scratch.
-
-Prefer your own hardware? Instatic is a single Docker image:
+When a new version is available, update by rebuilding the image and redeploying. Your database and uploads stay on the attached storage, so the app container can be replaced without rebuilding the site from scratch.
 
 ```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
+docker compose -f compose.prod.yml -f compose.sqlite.yml up -d --build
 ```
 
-Full guides for VPS, Postgres, HTTPS with Caddy, Render, and backups are in [docs/deployment](docs/deployment/README.md).
+Full guides for VPS, Postgres, HTTPS with Caddy, and backups are in [docs/deployment](docs/deployment/README.md).
 
 <br>
 
@@ -168,8 +147,8 @@ What comes out the other end is plain HTML and compact CSS, all the way down. No
 You need [Bun](https://bun.sh). Nothing else. The default dev setup runs on SQLite, so there are no extra services to stand up.
 
 ```sh
-git clone https://github.com/corebunch/instatic.git
-cd instatic
+git clone https://github.com/mateng-cb/instatic-m.git
+cd instatic-m
 bun install
 bun run dev
 ```
@@ -182,28 +161,11 @@ Want to see it the way it actually ships? `bun run start` builds the admin and s
 
 <br>
 
-## Who's behind this
+## About this repository
 
-We're the team behind **[Motion.page](https://motion.page)** and **[Core Framework](https://coreframework.com)** — tools that thousands of people use to build websites for a living, mostly in the WordPress world.
+**Instatic-M** is a private secondary-development fork of [CoreBunch/Instatic](https://github.com/CoreBunch/Instatic), the self-hosted CMS built by the team behind [Motion.page](https://motion.page) and [Core Framework](https://coreframework.com). Huge thanks to them for open-sourcing the original.
 
-We spent years making other platforms more bearable. At some point the obvious question wouldn't go away: what if the thing underneath was just right to begin with? No legacy to work around, no markup we're not allowed to touch, no business model that depends on keeping your site where we can see it.
-
-So we built Instatic. And we brought Core Framework along, wired in as a core system, so the color shades, type scales, spacing, and utility classes our users already rely on are part of the product — not an add-on you install and hope for the best.
-
-<br>
-
-## Early, on purpose
-
-Here's the honest part: this is version 0.0.x.
-
-Everything above — the canvas, Core Framework, the universal content model, the sandboxed plugins, the AI agent, forms, loops, templates, media, MFA, the audit log, one-click deploy, the clean publisher — is the starting line, not the finish. What's coming:
-
-- **Real analytics.** First-party and privacy-respecting, to round out the Analyze pillar.
-- **A bigger module and plugin ecosystem.** More first-party blocks, more SDK surface, more examples to copy from.
-- **A sharper AI agent.** More tools, deeper awareness of your actual site.
-- **Everything tighter.** We're pre-1.0 on purpose. It's the cheapest time to throw out bad ideas and keep the architecture clean.
-
-APIs and workflows can still shift before 1.0. If that makes you nervous, wait for 1.0 — no hard feelings. If you'd rather help shape what site ownership looks like for the next twenty years, now's the good seat.
+This fork carries its own development line (static site export, GitHub Pages publishing) and is **not** affiliated with the upstream project. Version 1.0.0 is the fork baseline: everything below that number is upstream history, preserved under the same MIT license.
 
 <br>
 

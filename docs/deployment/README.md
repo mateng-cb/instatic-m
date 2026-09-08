@@ -10,10 +10,6 @@ Instatic is one Bun server packaged by the root `Dockerfile`. The server reads r
 
 | Target | Use when | Database | Persistent storage | Docs |
 |---|---|---|---|---|
-| Railway SQLite template | Fastest managed install for a single site | SQLite file | One Railway app volume mounted at `/app/storage` | [railway.md](railway.md) |
-| Railway Postgres template | Managed install for teams or horizontal scale later | Railway Postgres | App volume for uploads, Postgres service volume for DB | [railway.md](railway.md) |
-| Render SQLite template | Managed Docker install outside Railway | SQLite file | One Render disk mounted at `/app/storage` | [render.md](render.md) |
-| Render Postgres template | Managed Postgres install outside Railway | Render Postgres | Render disk for uploads, Render Postgres storage for DB | [render.md](render.md) |
 | VPS Docker Compose | Self-hosted server, full control | SQLite or bundled Postgres | Docker named volumes | [vps.md](vps.md) |
 | Generic Docker host | Any platform that runs the Dockerfile/image | SQLite or external Postgres | A mounted directory/volume for DB/uploads | [docker-image.md](docker-image.md) |
 | VPS HTTPS | Public domain on a VPS | Unchanged | Caddy cert volume plus app volumes | [tls-caddy.md](tls-caddy.md) |
@@ -49,25 +45,13 @@ Managed platforms often override `PORT`. That is fine; the server uses `process.
 
 ## Image Availability
 
-Release bundles plus the published GHCR image are the default portable install path:
+The image is always built from this repository — `compose.prod.yml` carries the `build` context, so Compose builds it on first `up` and on every `--build`:
 
 ```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:latest docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
+docker compose -f compose.prod.yml -f compose.sqlite.yml up -d --build
 ```
 
-Pin a semver tag for predictable upgrades:
-
-```sh
-INSTATIC_IMAGE=ghcr.io/corebunch/instatic:0.0.18 docker compose -f compose.prod.yml -f compose.sqlite.yml up -d
-```
-
-Source builds remain supported for contributors and release-candidate testing:
-
-```sh
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml up -d --build
-```
-
-The maintainer release target is `ghcr.io/corebunch/instatic`, documented in [release-workflow.md](release-workflow.md).
+Override the resulting tag with `INSTATIC_IMAGE` when you push it to your own registry.
 
 ## Database Choice
 
@@ -98,14 +82,11 @@ SQLite installs also need the SQLite database file on persistent storage. On pla
 
 | File | Role |
 |---|---|
-| [railway.md](railway.md) | Railway templates for SQLite and Postgres |
-| [render.md](render.md) | Render Blueprint templates for SQLite and Postgres |
 | [vps.md](vps.md) | Docker Compose on a VPS, both SQLite and Postgres |
 | [docker-image.md](docker-image.md) | Generic Docker image contract and `docker run` examples |
 | [tls-caddy.md](tls-caddy.md) | Caddy TLS overlay for VPS Compose installs |
 | [backup-restore.md](backup-restore.md) | Database and uploads backup/restore |
 | [github-pages.md](github-pages.md) | GitHub Pages static publish (PAT, branch, `basePath`) |
-| [release-workflow.md](release-workflow.md) | Maintainer image publishing workflow |
 
 ## Related
 
@@ -113,5 +94,4 @@ SQLite installs also need the SQLite database file on persistent storage. On pla
 - `server/db/index.ts` — database URL detection
 - `server/index.ts` — migrations, media storage, and server boot
 - `Dockerfile` — production image contract
-- `compose.prod.yml`, `compose.sqlite.yml`, `compose.tls.yml`, `compose.build.yml` — VPS Compose files
-- `docs/deployment/render/sqlite/render.yaml`, `docs/deployment/render/postgres/render.yaml` — Render Blueprint templates
+- `compose.prod.yml`, `compose.sqlite.yml`, `compose.tls.yml` — VPS Compose files

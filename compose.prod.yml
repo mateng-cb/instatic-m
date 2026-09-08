@@ -20,7 +20,10 @@ services:
       retries: 10
 
   app:
-    image: ${INSTATIC_IMAGE:-ghcr.io/corebunch/instatic:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${INSTATIC_IMAGE:-instatic-m:local}
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-3001}:3001"

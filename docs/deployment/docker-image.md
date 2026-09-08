@@ -26,20 +26,11 @@ UPLOADS_DIR=/app/storage/uploads
 
 ## Build Locally
 
+The image is always built from this repository:
+
 ```sh
 docker build -t instatic:local .
 ```
-
-## Published Image
-
-GHCR is the canonical image registry:
-
-```sh
-docker pull ghcr.io/corebunch/instatic:latest
-docker pull ghcr.io/corebunch/instatic:0.0.18
-```
-
-The v0.0.18 published image is built for `linux/amd64`. Use it on Railway and x86_64 VPS/container hosts. ARM64 hosts should build from source for now, or wait for the native arm64 release job before pulling GHCR images directly.
 
 ## Run With SQLite
 
@@ -85,53 +76,6 @@ docker run -d \
 
 The app volume is still required in Postgres mode because uploads, fonts, plugin packs, and published disk artefacts live under `UPLOADS_DIR`.
 
-Replace `instatic:local` with `ghcr.io/corebunch/instatic:<tag>` when deploying from a published image.
-
-## Run On Railway From The Image
-
-Create an app service from Docker image source:
-
-```txt
-ghcr.io/corebunch/instatic:0.0.18
-```
-
-Attach a Railway volume at `/app/storage`, set the health check path to `/health`, and set app variables:
-
-```txt
-PORT=8080
-DATABASE_URL=sqlite:/app/storage/data/cms.db
-UPLOADS_DIR=/app/storage/uploads
-STATIC_DIR=/app/dist
-INSTATIC_SECRET_KEY=<output of bun run scripts/generate-secret-key.ts>
-PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}
-RAILWAY_RUN_UID=0
-```
-
-`RAILWAY_RUN_UID=0` is required because Railway volumes are mounted as `root` and the published image otherwise runs as the non-root `bun` user. `PUBLIC_ORIGIN=https://${{RAILWAY_PUBLIC_DOMAIN}}` gives Instatic the public origin for its CSRF check now that Railway terminates HTTPS at the edge; the server would auto-detect the same value from `RAILWAY_PUBLIC_DOMAIN`, but setting it explicitly survives custom-domain edits.
-
-Enable Railway Image Auto Updates when you want Railway to move the service forward automatically during a maintenance window. Use `:latest` for "always follow the newest image", or a semver tag such as `:0.0.18` if you want Railway's semver update controls.
-
-## Run On Render From The Image
-
-Use the checked-in Render Blueprints when creating Deploy to Render template repositories:
-
-```txt
-docs/deployment/render/sqlite/render.yaml
-docs/deployment/render/postgres/render.yaml
-```
-
-The SQLite Blueprint creates one image-backed web service and one persistent disk:
-
-```txt
-PORT=10000
-DATABASE_URL=sqlite:/app/storage/data/cms.db
-UPLOADS_DIR=/app/storage/uploads
-STATIC_DIR=/app/dist
-```
-
-Render auto-injects `RENDER_EXTERNAL_URL`, which Instatic uses as the CSRF public origin, so no proxy/origin variable is needed in the Blueprint. The Postgres Blueprint creates one image-backed web service, one persistent disk for uploads, and one Render Postgres database. See [render.md](render.md) for the full Render contract.
-
-
 ## Required Runtime Variables
 
 | Variable | Required | Value |
@@ -166,8 +110,6 @@ Expected response:
 ## Related
 
 - [deployment/README.md](README.md) — deployment overview
-- [railway.md](railway.md) — Railway template variables
-- [render.md](render.md) — Render Blueprint variables
 - [vps.md](vps.md) — Docker Compose install
 - [backup-restore.md](backup-restore.md) — backing up DB and uploads
 - `Dockerfile` — production image definition

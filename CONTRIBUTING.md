@@ -34,7 +34,7 @@ For Docker changes:
 
 ```sh
 docker build -t instatic:local .
-docker compose -f compose.prod.yml -f compose.sqlite.yml -f compose.build.yml config
+docker compose -f compose.prod.yml -f compose.sqlite.yml config
 ```
 
 ## Pull Requests

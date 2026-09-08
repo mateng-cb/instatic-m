@@ -9,7 +9,7 @@
 # against the Postgres mode instead.
 #
 # For a fully-containerized stack (closer to production), use:
-#   docker compose -f compose.prod.yml -f compose.build.yml up --build
+#   docker compose -f compose.prod.yml up --build
 
 services:
   postgres:
