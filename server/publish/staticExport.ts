@@ -9,6 +9,7 @@ import {
 import type { PathMode, StaticExportResult } from '@core/static-export/types'
 import {
   NOT_FOUND_ARTEFACT_URL_PATH,
+  getActiveSlot,
   readArtefact,
   readStaticAsset,
 } from './staticArtefact'
@@ -110,8 +111,11 @@ export async function exportPublishedSiteStatic(options: {
 
   // "Published" means the current slot has at least one baked HTML page.
   // Do NOT require `/` → index.html: HTML imports often land as `/index` or
-  // `/index-2` while still being a successful Publish.
-  const slotDir = join(uploadsDir, 'published', 'current')
+  // `/index-2` while still being a successful Publish. Resolve the active
+  // slot through the pointer-file API — `published/current` is a pointer
+  // file (or, on legacy installs, a symlink), never a directory.
+  const slot = await getActiveSlot(uploadsDir)
+  const slotDir = join(uploadsDir, 'published', slot)
   const htmlRelPaths = await walkPublishedHtmlFiles(slotDir)
 
   const pages: BuildExportTreeInput['pages'] = []
