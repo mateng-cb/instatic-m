@@ -81,6 +81,7 @@ import { iframeLocalPointToParentClientPoint } from './iframeEventCoordinates'
 import { useCanvasFormControlSuppression } from './useCanvasFormControlSuppression'
 import { CANVAS_VIEWPORT_HEIGHT, type CanvasViewport } from './resolveViewportUnits'
 import { useIframeFrameAutoHeight } from './useIframeFrameAutoHeight'
+import { useLiveIframeViewport } from './useLiveIframeViewport'
 import { applyIframeBodyReset, type IframeInteraction } from './iframeBodyReset'
 import {
   isCanvasSpacePanActive,
@@ -130,6 +131,14 @@ interface IframeFrameSurfaceProps {
   breakpointId: string
   /** Logical viewport width in px; drives the iframe's CSS width. */
   width: number
+  /**
+   * Logical viewport height in px — the basis viewport units (`vh`, `vmin`, …)
+   * in class rules resolve against for this breakpoint's DESIGN frame. Callers
+   * pass `breakpointViewport(breakpoint).height`. Live frames ignore it and
+   * resolve units against the iframe's real measured size — see
+   * `useLiveIframeViewport`. Falls back to `CANVAS_VIEWPORT_HEIGHT`.
+   */
+  viewportHeight?: number
   className?: string
   style?: CSSProperties
   /**
@@ -186,6 +195,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     {
       breakpointId,
       width,
+      viewportHeight,
       className,
       style,
       onClick,
@@ -281,7 +291,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     // against `:where()` (zero-specificity) so the override is safe.
     useEffect(() => {
       if (!iframeDoc?.body) return
-      applyIframeBodyReset(iframeDoc, breakpointId, interaction)
+      applyIframeBodyReset(iframeDoc, breakpointId, interaction, viewportHeight)
       if (!onClick) return
       // Empty-frame click: ONLY fire when the click target is the body
       // itself (not a child node bubbling up). Without this guard, every
@@ -299,7 +309,7 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
       return () => {
         iframeDoc.body.removeEventListener('click', handler)
       }
-    }, [iframeDoc, breakpointId, onClick, interaction])
+    }, [iframeDoc, breakpointId, onClick, interaction, viewportHeight])
 
     // ── Navigation guard ─────────────────────────────────────────────────
     // The canvas iframe is an EDITING surface, never a browsing surface.
@@ -626,11 +636,22 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
         )
       : {}
 
-    // Frame viewport for canvas viewport-unit resolution. Width is the
-    // breakpoint width (the iframe's real width); height is a fixed
-    // device-like value. Pinning `vh`/`vmax`/… to this stops authored
-    // viewport units from feeding the grow-to-content height loop above.
-    const viewport: CanvasViewport = { width, height: CANVAS_VIEWPORT_HEIGHT }
+    // Frame viewport for canvas viewport-unit resolution.
+    // - Design frames: the breakpoint's declared viewport — width is the
+    //   breakpoint width (the iframe's real width), height the breakpoint's
+    //   viewport height (`breakpointViewport` upstream). Pinning `vh`/`vmax`/…
+    //   to a fixed device-like height stops authored viewport units from
+    //   feeding the grow-to-content height loop above.
+    // - Live frames: the iframe's real measured viewport. A live frame is its
+    //   own scroll viewport with a constant height (auto-height skips live),
+    //   so resolving units against reality has no feedback loop — and it is
+    //   the height a visitor would actually see.
+    const liveViewport = useLiveIframeViewport(iframeRef, isLive)
+    const fallbackViewport: CanvasViewport = {
+      width,
+      height: viewportHeight ?? CANVAS_VIEWPORT_HEIGHT,
+    }
+    const viewport: CanvasViewport = isLive ? (liveViewport ?? fallbackViewport) : fallbackViewport
 
     return (
       <>

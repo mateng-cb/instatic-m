@@ -135,9 +135,15 @@ describe('canvas frame mounting', () => {
     const designDoc = await waitForCanvasFrameDocument('desktop')
     expect(designDoc.documentElement.style.height).toBe('auto')
     expect(designDoc.body.style.height).toBe('auto')
+    // Desktop default breakpoints keep the historic 800px basis…
     expect(designDoc.body.style.minHeight).toBe(`${CANVAS_VIEWPORT_HEIGHT}px`)
     expect(designDoc.documentElement.style.overflow).toBe('hidden')
     expect(designDoc.body.style.overflow).toBe('hidden')
+
+    // …while phone-class frames size to their declared viewport height
+    // (mobile 375×667), the basis authored `vh` resolves against.
+    const mobileDoc = await waitForCanvasFrameDocument('mobile')
+    expect(mobileDoc.body.style.minHeight).toBe('667px')
 
     cleanup()
     useEditorStore.setState({ canvasView: 'live' } as Parameters<typeof useEditorStore.setState>[0])

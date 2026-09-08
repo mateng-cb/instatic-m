@@ -14,7 +14,7 @@
 
 import { use, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Breakpoint, Page } from '@core/page-tree'
+import { breakpointViewport, type Breakpoint, type Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { CanvasComposedTree } from './CanvasComposedTree'
 import {
@@ -64,6 +64,7 @@ export function AgentSnapshotFrame({
         <IframeFrameSurface
           breakpointId={breakpoint.id}
           width={breakpoint.width}
+          viewportHeight={breakpointViewport(breakpoint).height}
           dataAttrs={{ 'data-agent-snapshot-iframe': requestId }}
         >
           <CanvasTemplateContext.Provider value={templateContext}>
