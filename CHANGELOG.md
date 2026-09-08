@@ -1,8 +1,25 @@
 # Changelog
 
-All notable changes to Instatic will be documented here.
+All notable changes to Instatic-M will be documented here.
 
-This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
+**Instatic-M** is a private secondary-development fork of [CoreBunch/Instatic](https://github.com/CoreBunch/Instatic) (MIT). Entries below `1.0.0` are upstream history, preserved verbatim.
+
+Versioning from 1.0.0: minor releases (`1.x.0`) carry secondary-development features, patch releases (`1.0.x`) carry fixes. Upstream is no longer merged wholesale; needed upstream fixes are cherry-picked with the source commit noted in the entry.
+
+## 1.0.0 - 2026-09-08
+
+Secondary-development baseline. Fork point: upstream `CoreBunch/Instatic` synced through `3a9543e` (v0.0.18), then detached.
+
+### Secondary development
+
+- Added static site export (Phase A): bakes every published page into a directory-routed static tree (`/page/` → `page/index.html`), rewrites stylesheet URLs, and bundles CSS-referenced media into a downloadable zip.
+- Added Publish to GitHub: pushes the static export to a GitHub branch (default `gh-pages`) over the Git Data API — live upload progress, concurrent blob uploads, timeouts, a `.nojekyll` marker, custom commit messages, and a PAT stored encrypted under `INSTATIC_SECRET_KEY`. Project-site hosting is supported through a configurable base path.
+- Capped single-file media uploads at 15 MB, with a soft "large file" warning from 10 MB.
+
+### Repository
+
+- Rebranded the repository identity to `instatic-m` under `mateng-cb` and removed upstream public-operating assets (funding, GHCR release workflow, Railway/Render deployment guides and templates). The Docker image now always builds from this repository.
+- LICENSE retains the upstream copyright line and adds the fork's, per MIT.
 
 ## 0.0.18 - 2026-09-01
 
