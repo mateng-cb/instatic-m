@@ -423,3 +423,26 @@ export const PublishGithubResultSchema = Type.Object({
 })
 
 export type PublishGithubResult = Static<typeof PublishGithubResultSchema>
+
+export const GithubPublishProgressSchema = Type.Object({
+  running: Type.Boolean(),
+  phase: Type.Union([
+    Type.Literal('exporting'),
+    Type.Literal('uploading'),
+    Type.Literal('finalizing'),
+    Type.Literal('done'),
+  ]),
+  total: Type.Integer(),
+  uploaded: Type.Integer(),
+  currentPath: Type.String(),
+  startedAt: Type.Integer(),
+  updatedAt: Type.Integer(),
+})
+
+export type GithubPublishProgress = Static<typeof GithubPublishProgressSchema>
+
+export const GithubPublishProgressResponseSchema = Type.Object({
+  progress: Type.Union([GithubPublishProgressSchema, Type.Null()]),
+})
+
+export type GithubPublishProgressResponse = Static<typeof GithubPublishProgressResponseSchema>

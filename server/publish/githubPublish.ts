@@ -13,6 +13,7 @@ import { normalizeBasePath } from '@core/static-export/rewriteUrls'
 import type { ExportReportItem } from '@core/static-export/types'
 import type { DbClient } from '../db/client'
 import { gitDataApiPush } from '../github/gitDataApiPush'
+import type { GitDataApiPushProgress } from '../github/types'
 import {
   decryptGithubPublishToken,
   getGithubPublishSettingsView,
@@ -50,9 +51,13 @@ export async function publishSiteToGithub(opts: {
   branch?: string
   targetDir?: string
   basePath?: string
+  /** commit summary; undefined → push default ("Publish site from Instatic") */
+  commitMessage?: string
   /** test seams */
   exportFn?: typeof exportPublishedSiteStatic
   pushFn?: typeof gitDataApiPush
+  /** push progress → caller (progress registry / logs). */
+  onPushProgress?: (progress: GitDataApiPushProgress) => void
 }): Promise<PublishSiteToGithubResult> {
   const settings = await getGithubPublishSettingsView(opts.db)
 
@@ -109,6 +114,8 @@ export async function publishSiteToGithub(opts: {
       branch,
       targetDir,
       exportDir: outDir,
+      commitMessage: opts.commitMessage,
+      onProgress: opts.onPushProgress,
     })
     await rm(outDir, { recursive: true, force: true })
     return {

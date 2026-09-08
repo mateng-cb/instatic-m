@@ -8,10 +8,12 @@
  */
 import { useEffect, useId, useState } from 'react'
 import {
+  getGithubPublishProgress,
   getGithubPublishSettings,
   publishToGithub,
   putGithubPublishSettings,
 } from '@core/persistence'
+import type { GithubPublishProgress } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { Dialog } from '@ui/components/Dialog'
@@ -22,6 +24,8 @@ import styles from './GithubPublishDialog.module.css'
 
 const FORM_ID = 'github-publish-form'
 const DEFAULT_BRANCH = 'gh-pages'
+/** Mirrors the server-side default in server/github/gitDataApiPush.ts. */
+const DEFAULT_COMMIT_MESSAGE = 'Publish site from Instatic'
 
 interface GithubPublishDialogProps {
   open: boolean
@@ -33,6 +37,7 @@ interface PublishFormValues {
   branch: string
   targetDir: string
   basePath: string
+  commitMessage: string
   token: string
   hasToken: boolean
   clearToken: boolean
@@ -47,6 +52,18 @@ type PublishResult = Awaited<ReturnType<typeof publishToGithub>>
 
 function shortSha(sha: string): string {
   return sha.slice(0, 7)
+}
+
+/** Human label for an in-flight publish; null → nothing to show. */
+function progressLabel(progress: GithubPublishProgress): string | null {
+  if (!progress.running) return null
+  if (progress.phase === 'exporting') return 'Preparing export…'
+  if (progress.phase === 'uploading') {
+    const base = `Uploading files ${progress.uploaded}/${progress.total}`
+    return progress.currentPath ? `${base} — ${progress.currentPath}` : base
+  }
+  if (progress.phase === 'finalizing') return 'Creating commit on GitHub…'
+  return null
 }
 
 function commitUrlFor(owner: string, repo: string, sha: string): string | null {
@@ -132,6 +149,7 @@ async function runGithubPublish(
   const branch = values.branch.trim() || DEFAULT_BRANCH
   const targetDir = values.targetDir.trim()
   const basePath = values.basePath.trim()
+  const commitMessage = values.commitMessage.trim()
 
   const body: {
     repoUrl: string
@@ -154,7 +172,12 @@ async function runGithubPublish(
     setHasToken(saved.hasToken)
 
     const result = await runStepUp(() =>
-      publishToGithub({ branch, targetDir, basePath }),
+      publishToGithub({
+        branch,
+        targetDir,
+        basePath,
+        ...(commitMessage ? { commitMessage } : {}),
+      }),
     )
 
     toastPublishSuccess(result, saved.owner, saved.repo)
@@ -181,16 +204,19 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
   const branchId = useId()
   const targetDirId = useId()
   const basePathId = useId()
+  const commitMessageId = useId()
   const tokenId = useId()
 
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<GithubPublishProgress | null>(null)
 
   const [repoUrl, setRepoUrl] = useState('')
   const [branch, setBranch] = useState(DEFAULT_BRANCH)
   const [targetDir, setTargetDir] = useState('')
   const [basePath, setBasePath] = useState('')
+  const [commitMessage, setCommitMessage] = useState('')
   const [token, setToken] = useState('')
   const [hasToken, setHasToken] = useState(false)
   const [clearToken, setClearToken] = useState(false)
@@ -223,15 +249,40 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
     }
   }, [open])
 
+  // Poll the publish progress endpoint while the publish POST is in flight,
+  // so long uploads show "still moving" feedback instead of a dead spinner.
+  useEffect(() => {
+    if (!busy) return
+    let cancelled = false
+
+    const poll = () => {
+      void getGithubPublishProgress()
+        .then((res) => {
+          if (!cancelled) setProgress(res.progress)
+        })
+        .catch((_err) => {
+          // Best-effort telemetry; the publish POST itself reports failures.
+        })
+    }
+    poll()
+    const interval = setInterval(poll, 1000)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [busy])
+
   async function handlePublish() {
     await runGithubPublish(
-      { repoUrl, branch, targetDir, basePath, token, hasToken, clearToken },
+      { repoUrl, branch, targetDir, basePath, commitMessage, token, hasToken, clearToken },
       runStepUp,
       setBusy,
       setError,
       setHasToken,
       onClose,
     )
+    setProgress(null)
   }
 
   function handleClearToken() {
@@ -372,6 +423,25 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
         </div>
 
         <div className={styles.field}>
+          <label htmlFor={commitMessageId} className={styles.label}>
+            Commit message
+          </label>
+          <Input
+            id={commitMessageId}
+            fieldSize="sm"
+            value={commitMessage}
+            onChange={(event) => {
+              setCommitMessage(event.target.value)
+              setError(null)
+            }}
+            placeholder={DEFAULT_COMMIT_MESSAGE}
+            maxLength={280}
+            autoComplete="off"
+            disabled={busy}
+          />
+        </div>
+
+        <div className={styles.field}>
           <div className={styles.tokenMeta}>
             <label htmlFor={tokenId} className={styles.label}>
               Personal access token
@@ -411,6 +481,11 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
           />
         </div>
 
+        {busy && progress && progressLabel(progress) && (
+          <p role="status" className={styles.progress}>
+            {progressLabel(progress)}
+          </p>
+        )}
         {error && (
           <p role="alert" className={styles.error}>
             {error}

@@ -1,10 +1,12 @@
 export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
 export {
+  getGithubPublishProgress,
   getGithubPublishSettings,
   publishToGithub,
   putGithubPublishSettings,
 } from './cmsGithubPublish'
+export type { GithubPublishProgress } from './responseSchemas'
 export { downloadStaticExport } from './cmsStaticExport'
 export { buildCmsRuntimePreview, resolveCmsRuntimeDependencies } from './cmsRuntime'
 export type { CmsRuntimePreviewResult } from './cmsRuntime'

@@ -1,7 +1,9 @@
 import { apiRequest, type FetchLike } from '@core/http'
 import {
+  GithubPublishProgressResponseSchema,
   GithubPublishSettingsViewSchema,
   PublishGithubResultSchema,
+  type GithubPublishProgressResponse,
   type GithubPublishSettingsView,
   type PublishGithubResult,
 } from './responseSchemas'
@@ -37,11 +39,23 @@ export async function putGithubPublishSettings(
   })
 }
 
+export async function getGithubPublishProgress(
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  basePath = '/admin/api/cms',
+): Promise<GithubPublishProgressResponse> {
+  return apiRequest(`${basePath}/github-publish/progress`, {
+    schema: GithubPublishProgressResponseSchema,
+    fetchImpl,
+    fallbackMessage: 'GitHub publish progress request failed',
+  })
+}
+
 export async function publishToGithub(
   body: {
     branch?: string
     targetDir?: string
     basePath?: string
+    commitMessage?: string
   } = {},
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',

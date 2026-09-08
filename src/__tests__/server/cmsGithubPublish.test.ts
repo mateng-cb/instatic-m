@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { DbClient } from '../../../server/db'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { handleGithubPublishRoutes } from '../../../server/handlers/cms/githubPublish'
+import { resetGithubPublishProgress } from '../../../server/publish/githubPublishProgress'
 import { SESSION_COOKIE_NAME } from '../../../server/auth/tokens'
 import { stampSocketIp } from '../../../server/auth/security'
 import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
@@ -94,6 +95,14 @@ function publishGithubRequest(cookie?: string, body: unknown = {}): Request {
   return req
 }
 
+function progressRequest(cookie?: string): Request {
+  const req = new Request('http://localhost/admin/api/cms/github-publish/progress', {
+    method: 'GET',
+  })
+  if (cookie) withCookie(req, cookie)
+  return req
+}
+
 describe('GitHub publish HTTP handlers', () => {
   let originalSecretKey: string | undefined
 
@@ -101,6 +110,7 @@ describe('GitHub publish HTTP handlers', () => {
     originalSecretKey = process.env.INSTATIC_SECRET_KEY
     process.env.INSTATIC_SECRET_KEY = TEST_MASTER_KEY
     __resetMasterKeyCacheForTesting()
+    resetGithubPublishProgress()
   })
 
   afterEach(() => {
@@ -233,6 +243,37 @@ describe('GitHub publish HTTP handlers', () => {
       expect(res?.status).toBe(400)
       const body = await res!.json() as { error: string }
       expect(body.error).toMatch(/token/i)
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
+
+  it('GET progress requires auth, mirrors the registry, and ends after a failed publish', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+
+      const unauth = await handleGithubPublishRoutes(progressRequest(), db)
+      expect(unauth?.status).toBe(401)
+
+      const cookie = await login(db)
+      const empty = await handleGithubPublishRoutes(progressRequest(cookie), db)
+      expect(empty?.status).toBe(200)
+      expect(await empty!.json()).toEqual({ progress: null })
+
+      // A failed publish (token-missing, 400) still closes the progress slot.
+      const stepUpCookie = await completeStepUp(db, cookie)
+      const publish = await handleGithubPublishRoutes(
+        publishGithubRequest(stepUpCookie),
+        db,
+        { uploadsDir: '/tmp/unused' },
+      )
+      expect(publish?.status).toBe(400)
+
+      const after = await handleGithubPublishRoutes(progressRequest(cookie), db)
+      expect(after?.status).toBe(200)
+      const afterBody = await after!.json() as { progress: { running: boolean; phase: string } }
+      expect(afterBody.progress).toMatchObject({ running: false, phase: 'done' })
     } finally {
       await safeCleanup(cleanup)
     }

@@ -627,9 +627,12 @@ The orchestrator is `publishSiteToGithub` in `server/publish/githubPublish.ts`. 
 |--------|------|--------|
 | `GET` | `/admin/api/cms/github-publish/settings` | Wire-safe view; `pages.publish` |
 | `PUT` | `/admin/api/cms/github-publish/settings` | Upsert repo/branch/`targetDir`/`basePath`/PAT; `pages.publish` |
-| `POST` | `/admin/api/cms/publish-github` | Optional body overrides; `pages.publish` + step-up |
+| `GET` | `/admin/api/cms/github-publish/progress` | In-flight publish progress (single-slot in-memory registry); `pages.publish` |
+| `POST` | `/admin/api/cms/publish-github` | Optional body overrides (`branch`/`targetDir`/`basePath`/`commitMessage`); `pages.publish` + step-up |
 
-Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `publishToGithub` in `src/core/persistence/cmsGithubPublish.ts`.
+Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `publishToGithub`, `getGithubPublishProgress` in `src/core/persistence/cmsGithubPublish.ts`.
+
+The push uploads blobs **4 at a time**, each GitHub API request carrying a **60 s timeout** (`AbortSignal.timeout`), so a black-holed connection fails fast instead of hanging the publish forever. While the POST is pending, the dialog polls the progress endpoint (1 s interval) and shows `Uploading files 45/132 — path` / `Creating commit on GitHub…`. Every push also writes a root `.nojekyll` blob — GitHub Pages' Jekyll build would otherwise drop every `_instatic/` asset.
 
 POST success: `{ commitSha, repoUrl, branch, report }`.
 
@@ -642,6 +645,7 @@ POST success: `{ commitSha, repoUrl, branch, report }`.
 
 ```text
 server/publish/githubPublish.ts           — export then push orchestrator
+server/publish/githubPublishProgress.ts  — in-memory progress registry (single slot)
 server/github/gitDataApiPush.ts         — Git Data API (no local git)
 server/github/parseRepoUrl.ts           — repo URL → owner/repo
 server/repositories/githubPublishSettings.ts

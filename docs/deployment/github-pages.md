@@ -59,7 +59,9 @@ Create a PAT on GitHub with write access to repository contents:
 | Classic PAT | `repo` scope, or minimum **`contents: write`** on the target repo |
 | Fine-grained PAT | Repository access to the target repo; **Contents: Read and write** |
 
-Instatic uses the Git Data API (`server/github/gitDataApiPush.ts`) — no local `git` binary. The token is sent only to `api.github.com` during push; it is not written to logs or the export tree.
+Instatic uses the Git Data API (`server/github/gitDataApiPush.ts`) — no local `git` binary. Blobs upload 4 at a time with a 60 s per-request timeout; the token is sent only to `api.github.com` during push; it is not written to logs or the export tree. While a push is running, the publish dialog polls `GET /admin/api/cms/github-publish/progress` and shows per-file upload progress (`Uploading files 45/132 — path`).
+
+Every push writes a root **`.nojekyll`** marker into the target tree. GitHub Pages runs Jekyll by default and Jekyll silently drops `_`-prefixed paths — all Instatic assets live under `_instatic/`, so without the marker every stylesheet and runtime script would 404 on Pages.
 
 **Token rotation in admin:** omit `token` on PUT → keep existing; empty string → clear; non-empty string → replace.
 
@@ -157,6 +159,7 @@ If push fails after a successful export, the server keeps the temp export direct
 |---|---|---|
 | `GET` | `/admin/api/cms/github-publish/settings` | `pages.publish` |
 | `PUT` | `/admin/api/cms/github-publish/settings` | `pages.publish` |
+| `GET` | `/admin/api/cms/github-publish/progress` | `pages.publish` |
 | `POST` | `/admin/api/cms/publish-github` | `pages.publish` + step-up |
 
 Handler: `server/handlers/cms/githubPublish.ts`. Client helpers: `src/core/persistence/cmsGithubPublish.ts`.

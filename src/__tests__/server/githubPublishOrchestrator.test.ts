@@ -12,6 +12,7 @@ import {
   publishSiteToGithub,
 } from '../../../server/publish/githubPublish'
 import { exportPublishedSiteStatic } from '../../../server/publish/staticExport'
+import type { GitDataApiPushProgress } from '../../../server/github/types'
 import { upsertGithubPublishSettings } from '../../../server/repositories/githubPublishSettings'
 import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
 
@@ -162,5 +163,83 @@ describe('publishSiteToGithub orchestrator', () => {
       report: [{ severity: 'warning', code: 'form-static', message: 'form' }],
     })
     expect(await pathExists(capturedOutDir)).toBe(false)
+  })
+
+  it('forwards push progress to onPushProgress', async () => {
+    await upsertGithubPublishSettings(testDb.db, {
+      repoUrl: TEST_REPO,
+      branch: 'gh-pages',
+      targetDir: '',
+      basePath: '',
+      token: TEST_TOKEN,
+    })
+
+    const exportFn: typeof exportPublishedSiteStatic = async (options) => {
+      await mkdir(options.outDir, { recursive: true })
+      await writeFile(join(options.outDir, 'index.html'), '<html></html>', 'utf8')
+      return { outDir: options.outDir, pageCount: 1, report: [] }
+    }
+
+    const pushFn: typeof gitDataApiPush = async (input) => {
+      input.onProgress?.({
+        phase: 'uploading',
+        uploaded: 1,
+        total: 2,
+        currentPath: 'index.html',
+      })
+      return { commitSha: 'abc123', treeSha: 'tree456' }
+    }
+
+    const seen: GitDataApiPushProgress[] = []
+    await publishSiteToGithub({
+      db: testDb.db,
+      uploadsDir: '/tmp/unused-uploads',
+      exportFn,
+      pushFn,
+      onPushProgress: (progress) => seen.push({ ...progress }),
+    })
+
+    expect(seen).toEqual([
+      { phase: 'uploading', uploaded: 1, total: 2, currentPath: 'index.html' },
+    ])
+  })
+
+  it('passes commitMessage through to the push; omitted → push default', async () => {
+    await upsertGithubPublishSettings(testDb.db, {
+      repoUrl: TEST_REPO,
+      branch: 'gh-pages',
+      targetDir: '',
+      basePath: '',
+      token: TEST_TOKEN,
+    })
+
+    const exportFn: typeof exportPublishedSiteStatic = async (options) => {
+      await mkdir(options.outDir, { recursive: true })
+      await writeFile(join(options.outDir, 'index.html'), '<html></html>', 'utf8')
+      return { outDir: options.outDir, pageCount: 1, report: [] }
+    }
+
+    const seenCommitMessages: Array<string | undefined> = []
+    const pushFn: typeof gitDataApiPush = async (input) => {
+      seenCommitMessages.push(input.commitMessage)
+      return { commitSha: 'abc123', treeSha: 'tree456' }
+    }
+
+    await publishSiteToGithub({
+      db: testDb.db,
+      uploadsDir: '/tmp/unused-uploads',
+      exportFn,
+      pushFn,
+    })
+
+    await publishSiteToGithub({
+      db: testDb.db,
+      uploadsDir: '/tmp/unused-uploads',
+      exportFn,
+      pushFn,
+      commitMessage: 'DITE site update',
+    })
+
+    expect(seenCommitMessages).toEqual([undefined, 'DITE site update'])
   })
 })

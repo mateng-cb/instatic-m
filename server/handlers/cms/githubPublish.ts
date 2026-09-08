@@ -3,6 +3,7 @@
  *
  *   GET  /admin/api/cms/github-publish/settings — wire-safe settings view
  *   PUT  /admin/api/cms/github-publish/settings — upsert repo / branch / token
+ *   GET  /admin/api/cms/github-publish/progress — in-flight publish progress
  *   POST /admin/api/cms/publish-github          — export + Git Data API push
  *
  * Settings mutations require `pages.publish` only (no step-up) — same blast
@@ -19,6 +20,12 @@ import {
   publishSiteToGithub,
 } from '../../publish/githubPublish'
 import {
+  beginGithubPublishProgress,
+  endGithubPublishProgress,
+  getGithubPublishProgress,
+  updateGithubPublishProgress,
+} from '../../publish/githubPublishProgress'
+import {
   getGithubPublishSettingsView,
   GithubPublishSettingsError,
   upsertGithubPublishSettings,
@@ -27,6 +34,7 @@ import type { CmsHandlerOptions } from './shared'
 import { CMS_API_PREFIX } from './shared'
 
 const SETTINGS_PATH = `${CMS_API_PREFIX}/github-publish/settings`
+const PROGRESS_PATH = `${CMS_API_PREFIX}/github-publish/progress`
 const PUBLISH_PATH = `${CMS_API_PREFIX}/publish-github`
 
 const PutSettingsSchema = Type.Object({
@@ -41,6 +49,8 @@ const PublishGithubSchema = Type.Object({
   branch: Type.Optional(Type.String()),
   targetDir: Type.Optional(Type.String()),
   basePath: Type.Optional(Type.String()),
+  /** One-line commit summary; empty/omitted → default message. */
+  commitMessage: Type.Optional(Type.String({ maxLength: 280 })),
 })
 
 export async function handleGithubPublishRoutes(
@@ -75,6 +85,15 @@ export async function handleGithubPublishRoutes(
     return methodNotAllowed()
   }
 
+  if (url.pathname === PROGRESS_PATH) {
+    if (req.method !== 'GET') return methodNotAllowed()
+
+    const user = await requireCapability(req, db, 'pages.publish')
+    if (user instanceof Response) return user
+
+    return jsonResponse({ progress: getGithubPublishProgress() })
+  }
+
   if (url.pathname === PUBLISH_PATH) {
     if (req.method !== 'POST') return methodNotAllowed()
 
@@ -90,6 +109,7 @@ export async function handleGithubPublishRoutes(
     const body = await readValidatedBody(req, PublishGithubSchema)
     if (!body) return badRequest('Invalid GitHub publish request body')
 
+    beginGithubPublishProgress()
     try {
       const result = await publishSiteToGithub({
         db,
@@ -97,6 +117,8 @@ export async function handleGithubPublishRoutes(
         branch: body.branch,
         targetDir: body.targetDir,
         basePath: body.basePath,
+        commitMessage: body.commitMessage?.trim() || undefined,
+        onPushProgress: updateGithubPublishProgress,
       })
       return jsonResponse(result)
     } catch (err) {
@@ -126,6 +148,8 @@ export async function handleGithubPublishRoutes(
         }
       }
       throw err
+    } finally {
+      endGithubPublishProgress()
     }
   }
 

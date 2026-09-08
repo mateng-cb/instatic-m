@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gitDataApiPush } from '../../../server/github/gitDataApiPush'
+import type { GitDataApiPushProgress } from '../../../server/github/types'
 
 const OWNER = 'acme'
 const REPO = 'site'
@@ -130,11 +131,11 @@ describe('gitDataApiPush', () => {
       if (method === 'POST' && url.endsWith('/git/trees')) {
         expect(body.base_tree).toBeUndefined()
         const paths = (body.tree as Array<{ path: string }>).map((t) => t.path).sort()
-        expect(paths).toEqual(['_instatic/css/a.css', 'index.html'])
+        expect(paths).toEqual(['.nojekyll', '_instatic/css/a.css', 'index.html'])
         for (const entry of body.tree as Array<{ mode: string; type: string; sha: string }>) {
           expect(entry.mode).toBe('100644')
           expect(entry.type).toBe('blob')
-          expect(entry.sha).toMatch(/^blob-sha-/)
+          if (entry.path !== '.nojekyll') expect(entry.sha).toMatch(/^blob-sha-/)
         }
         return jsonResponse(201, { sha: NEW_TREE_SHA })
       }
@@ -170,7 +171,7 @@ describe('gitDataApiPush', () => {
     expect(methods[0]).toContain('GET')
     expect(methods[0]).toContain('/git/ref/heads/')
     expect(methods.some((m) => m.startsWith('GET') && m.includes('/git/commits/'))).toBe(true)
-    expect(methods.filter((m) => m.startsWith('POST') && m.endsWith('/git/blobs'))).toHaveLength(2)
+    expect(methods.filter((m) => m.startsWith('POST') && m.endsWith('/git/blobs'))).toHaveLength(3) // 2 files + .nojekyll
     expect(methods.some((m) => m.startsWith('POST') && m.endsWith('/git/trees'))).toBe(true)
     expect(methods.some((m) => m.startsWith('POST') && m.endsWith('/git/commits'))).toBe(true)
     expect(methods.at(-1)).toMatch(/^PATCH .*\/git\/refs\/heads\//)
@@ -264,8 +265,98 @@ describe('gitDataApiPush', () => {
     })
 
     expect(result.commitSha).toBe(NEW_COMMIT_SHA)
-    expect(createdTreePaths).toEqual(['README.md', 'docs/index.html'])
+    expect(createdTreePaths).toEqual(['.nojekyll', 'README.md', 'docs/index.html'])
     expect(createdTreePaths).not.toContain('docs/old.html')
     expect(calls.some((c) => c.method === 'GET' && c.url.includes('recursive=1'))).toBe(true)
+  })
+
+  test('reports upload progress via onProgress', async () => {
+    const exportDir = await makeExportDir({
+      'index.html': '<html>hi</html>',
+      '_instatic/css/a.css': 'body{}',
+    })
+    tempDirs.push(exportDir)
+
+    const events: GitDataApiPushProgress[] = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method === 'GET' && url === REF_URL) {
+        return jsonResponse(200, { object: { sha: COMMIT_SHA, type: 'commit' } })
+      }
+      if (method === 'GET' && url.endsWith(`/git/commits/${COMMIT_SHA}`)) {
+        return jsonResponse(200, { sha: COMMIT_SHA, tree: { sha: BASE_TREE_SHA } })
+      }
+      if (method === 'POST' && url.endsWith('/git/blobs')) {
+        return jsonResponse(201, { sha: `blob-sha-${Math.random()}` })
+      }
+      if (method === 'POST' && url.endsWith('/git/trees')) {
+        return jsonResponse(201, { sha: NEW_TREE_SHA })
+      }
+      if (method === 'POST' && url.endsWith('/git/commits')) {
+        return jsonResponse(201, { sha: NEW_COMMIT_SHA })
+      }
+      if (method === 'PATCH' && url.endsWith(`/git/refs/heads/${BRANCH}`)) {
+        return jsonResponse(200, { object: { sha: NEW_COMMIT_SHA } })
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    }
+
+    await gitDataApiPush({
+      token: TOKEN,
+      owner: OWNER,
+      repo: REPO,
+      branch: BRANCH,
+      targetDir: '',
+      exportDir,
+      fetchImpl,
+      onProgress: (progress) => events.push({ ...progress }),
+    })
+
+    expect(events.map((e) => e.phase)).toEqual(['uploading', 'uploading', 'uploading', 'finalizing'])
+    // Counter goes 0 → 1 → 2 once per completed blob, then holds for finalizing.
+    expect(events.map((e) => e.uploaded)).toEqual([0, 1, 2, 2])
+    expect(events[0]).toMatchObject({ uploaded: 0, total: 2, currentPath: '' })
+    expect(events.at(-1)).toMatchObject({ phase: 'finalizing', uploaded: 2, total: 2, currentPath: '' })
+    // Both files are reported as completed (order is concurrency-dependent).
+    const completedPaths = new Set([events[1]!.currentPath, events[2]!.currentPath])
+    expect(completedPaths).toEqual(new Set(['_instatic/css/a.css', 'index.html']))
+  })
+
+  test('fails fast when a single request exceeds requestTimeoutMs', async () => {
+    const exportDir = await makeExportDir({ 'index.html': '<html></html>' })
+    tempDirs.push(exportDir)
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (method === 'GET' && url === REF_URL) {
+        return jsonResponse(200, { object: { sha: COMMIT_SHA, type: 'commit' } })
+      }
+      if (method === 'GET' && url.endsWith(`/git/commits/${COMMIT_SHA}`)) {
+        return jsonResponse(200, { sha: COMMIT_SHA, tree: { sha: BASE_TREE_SHA } })
+      }
+      if (method === 'POST' && url.endsWith('/git/blobs')) {
+        // Hang until the per-request abort signal fires, like a black-holed
+        // connection in the real world.
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    }
+
+    await expect(
+      gitDataApiPush({
+        token: TOKEN,
+        owner: OWNER,
+        repo: REPO,
+        branch: BRANCH,
+        targetDir: '',
+        exportDir,
+        fetchImpl,
+        requestTimeoutMs: 25,
+      }),
+    ).rejects.toThrow(/failed after 25ms/)
   })
 })
