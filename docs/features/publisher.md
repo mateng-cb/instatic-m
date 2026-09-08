@@ -579,7 +579,7 @@ Portable static export is a **separate pipeline** from local Publish. It reads t
 
 - The site must already have a successful local Publish (`published/current` readable). Otherwise the API returns **409**.
 - Same blast radius as publish: capability `pages.publish` + step-up.
-- Admin entry: Publish menu → **Export static site…** (defaults to `pathMode: 'relative'`).
+- Admin entry: Publish menu → **Export static site…** (directory layout, `pathMode: 'relative'`) or **Export static site (flat files)…** (`layout: 'flat'`).
 
 ### API
 
@@ -589,9 +589,12 @@ Content-Type: application/json
 
 {
   "pathMode": "relative" | "basePath",
+  "layout": "directory" | "flat",
   "basePath": "/repo-name"
 }
 ```
+
+`layout` defaults to `directory`. It is orthogonal to `pathMode`: the layout decides where each page lands on disk, `pathMode` decides how links are rewritten.
 
 | Result | Meaning |
 |--------|---------|
@@ -601,13 +604,13 @@ Content-Type: application/json
 | `409` | Site has not been published yet |
 | `422` | Export aborted — typically a per-visitor dynamic hole (`report` included) |
 
-Client helper: `downloadStaticExport({ pathMode, basePath? })` in `@core/persistence`.
+Client helper: `downloadStaticExport({ pathMode, layout, basePath? })` in `@core/persistence`.
 
 ### Behaviour (locked product decisions)
 
 | Topic | Behaviour |
 |-------|-----------|
-| Routes | Directory style: `/` → `index.html`, `/about` → `about/index.html` |
+| Routes | `directory` (default): `/` → `index.html`, `/about` → `about/index.html`. `flat`: `/about` → `about.html` beside `index.html` — one `.html` file per page, for hosts expecting the source site's flat routing |
 | Paths | ZIP default `relative`; `basePath` prefixes root-absolute URLs for project Pages |
 | Media | Only `/uploads/...` paths still referenced after rewrite are copied |
 | Shared holes | Expanded to a snapshot and inlined; hole runtime removed when no holes remain |
@@ -634,9 +637,11 @@ Push the same static export tree to a GitHub branch for GitHub Pages. Requires a
 
 ```text
 Local Publish (Layer A snapshot)
-  → exportPublishedSiteStatic({ pathMode: 'basePath', basePath })
+  → exportPublishedSiteStatic({ pathMode: 'basePath', layout: 'directory', basePath })
   → gitDataApiPush (blobs → tree → commit → update ref)
 ```
+
+Phase B always exports the `directory` layout — GitHub Pages serves directory indexes (`x/` → `x/index.html`), so the flat option is not exposed here.
 
 The orchestrator is `publishSiteToGithub` in `server/publish/githubPublish.ts`. It does not change Layer A bake or the Bun-hosted public router.
 

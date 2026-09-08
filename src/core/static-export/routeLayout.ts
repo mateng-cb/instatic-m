@@ -1,3 +1,5 @@
+import type { ExportLayout } from './types'
+
 function normalizeUrlPath(url: string): string {
   const path = url.split(/[?#]/)[0] ?? url
   return path
@@ -15,10 +17,15 @@ function pathSegments(path: string): string[] {
   return segments
 }
 
-export function exportPathForUrl(url: string): string {
+/**
+ * URL → 导出文件路径的唯一事实源。
+ * `directory`（默认）：`/x` → `x/index.html`；`flat`：`/x` → `x.html`。
+ */
+export function exportPathForUrl(url: string, layout: ExportLayout = 'directory'): string {
   const path = normalizeUrlPath(url)
   if (path === '/') return 'index.html'
   const segments = pathSegments(path)
+  if (layout === 'flat') return `${segments.join('/')}.html`
   return `${segments.join('/')}/index.html`
 }
 

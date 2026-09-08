@@ -45,6 +45,7 @@ describe('buildExportTree', () => {
     const result = await buildExportTree({
       outDir: '/tmp/export',
       pathMode: 'relative',
+      layout: 'directory',
       basePath: '',
       pages: [
         {
@@ -88,6 +89,7 @@ describe('buildExportTree', () => {
       buildExportTree({
         outDir: '/tmp/export',
         pathMode: 'relative',
+        layout: 'directory',
         basePath: '',
         pages: [{ url: '/', html }],
         fs,
@@ -110,6 +112,7 @@ describe('buildExportTree', () => {
     const result = await buildExportTree({
       outDir: '/tmp/export',
       pathMode: 'relative',
+      layout: 'directory',
       basePath: '',
       pages: [{ url: '/', html: '<img src="/uploads/missing.png">' }],
       fs,
@@ -133,6 +136,7 @@ describe('buildExportTree', () => {
     await buildExportTree({
       outDir: '/tmp/export',
       pathMode: 'relative',
+      layout: 'directory',
       basePath: '',
       pages: [{ url: '/', html: '<link href="/_instatic/css/site.css">' }],
       fs,
@@ -146,5 +150,47 @@ describe('buildExportTree', () => {
     expect(fs.files.get('_instatic/css/site.css')).toContain("url('../../uploads/footer-w64.webp')")
     expect(fs.files.get('uploads/footer-bg.webp')).toBe('\x09\x08\x07')
     expect(fs.files.get('uploads/footer-w64.webp')).toBe('\x06\x05\x04')
+  })
+
+  test('flat layout writes one .html per page beside index.html and cross-links them', async () => {
+    const fs = new RecordingFs()
+
+    await buildExportTree({
+      outDir: '/tmp/export',
+      pathMode: 'relative',
+      layout: 'flat',
+      basePath: '',
+      pages: [
+        {
+          url: '/',
+          html: '<a href="/about">About</a><img src="/uploads/hi.png">',
+        },
+        {
+          url: '/about',
+          html: '<a href="/">Home</a><a href="/about">Self</a>',
+        },
+      ],
+      fs,
+      expandHoles: {
+        classify: async () => 'shared',
+        renderShared: async () => '',
+      },
+    })
+
+    // One flat file per page — no per-route directories.
+    expect(fs.files.has('index.html')).toBe(true)
+    expect(fs.files.has('about.html')).toBe(true)
+    expect(fs.files.has('about/index.html')).toBe(false)
+
+    // Cross-links target the sibling files, never a directory form.
+    expect(fs.files.get('index.html')).toContain('href="about.html"')
+    expect(fs.files.get('about.html')).toContain('href="index.html"')
+    // Self-link resolves to the page file itself, not './'.
+    expect(fs.files.get('about.html')).toContain('href="about.html"')
+
+    const manifest = JSON.parse(fs.files.get('manifest.json') ?? '{}') as {
+      layout: string
+    }
+    expect(manifest.layout).toBe('flat')
   })
 })

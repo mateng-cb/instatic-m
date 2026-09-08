@@ -97,6 +97,9 @@ export async function publishSiteToGithub(opts: {
       uploadsDir: opts.uploadsDir,
       outDir,
       pathMode: 'basePath',
+      // GitHub Pages 由伺服方解析目录索引（x/ → x/index.html），
+      // Phase B 固定目录布局，不暴露 flat 选项。
+      layout: 'directory',
       basePath,
       expandHoles: createStaticExportHoleHooks(opts.db),
     })

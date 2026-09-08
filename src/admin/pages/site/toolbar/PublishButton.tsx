@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
+import type { ExportLayout } from '@core/static-export'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import {
   downloadStaticExport,
@@ -25,6 +26,7 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 const STATIC_EXPORT_FILENAME = 'instatic-static-export.zip'
+const STATIC_EXPORT_FLAT_FILENAME = 'instatic-static-export-flat.zip'
 
 function triggerBlobDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
@@ -172,7 +174,7 @@ export function PublishButton({
     }
   }
 
-  const handleExportStatic = async () => {
+  const handleExportStatic = async (layout: ExportLayout) => {
     if (!site || !enabled || exporting) return
 
     try {
@@ -189,8 +191,11 @@ export function PublishButton({
 
       setExporting(true)
       // Same blast radius as publish \u2014 reuse step-up retry for the ZIP download.
-      const blob = await runStepUp(() => downloadStaticExport({ pathMode: 'relative' }))
-      triggerBlobDownload(blob, STATIC_EXPORT_FILENAME)
+      const blob = await runStepUp(() => downloadStaticExport({ pathMode: 'relative', layout }))
+      triggerBlobDownload(
+        blob,
+        layout === 'flat' ? STATIC_EXPORT_FLAT_FILENAME : STATIC_EXPORT_FILENAME,
+      )
       pushToast({
         kind: 'success',
         title: 'Static site exported',
@@ -291,9 +296,21 @@ export function PublishButton({
       icon: exporting ? LoaderIcon : PackageSolidIcon,
       disabled: !site || exporting,
       onSelect: () => {
-        void handleExportStatic()
+        void handleExportStatic('directory')
       },
       testId: 'toolbar-export-static-action',
+    },
+    {
+      // \u5e73\u94fa\u5e03\u5c40\uff1a\u6bcf\u9875\u4e00\u4e2a HTML \u6587\u4ef6\uff08index.html\u3001about.html \u540c\u7ea7\uff09\uff0c
+      // \u5339\u914d\u6e90\u7ad9\u6241\u5e73\u8def\u7531\u7684\u9759\u6001\u6258\u7ba1\u573a\u666f\u3002
+      id: 'export-static-flat',
+      label: exporting ? 'Exporting\u2026' : 'Export static site (flat files)\u2026',
+      icon: exporting ? LoaderIcon : PackageSolidIcon,
+      disabled: !site || exporting,
+      onSelect: () => {
+        void handleExportStatic('flat')
+      },
+      testId: 'toolbar-export-static-flat-action',
     },
     {
       id: 'publish-github',

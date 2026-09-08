@@ -1,14 +1,16 @@
 import { exportPathForUrl, hrefBetween } from './routeLayout'
-import type { PathMode } from './types'
+import type { ExportLayout, PathMode } from './types'
 
 export interface RewriteDocumentUrlsOptions {
   pathMode: PathMode
+  layout: ExportLayout
   basePath: string
   exportFilePath: string
 }
 
 export interface RewriteRootAbsolutePathContext {
   pathMode: PathMode
+  layout: ExportLayout
   basePath: string
   exportFilePath: string
 }
@@ -62,8 +64,15 @@ function exportPathToDirectoryForm(exportPath: string): string {
   return exportPath
 }
 
-function relativePageHref(fromExportFile: string, urlPath: string): string {
-  const targetExport = exportPathForUrl(urlPath)
+function relativePageHref(
+  fromExportFile: string,
+  urlPath: string,
+  layout: ExportLayout,
+): string {
+  const targetExport = exportPathForUrl(urlPath, layout)
+  // flat 布局没有目录形：目标就是导出文件本身。自链（target === from）
+  // 也走 hrefBetween —— flat 下 './' 会解析到目录而非文件。
+  if (layout === 'flat') return hrefBetween(fromExportFile, targetExport)
   if (targetExport === fromExportFile) return './'
   const targetDir = exportPathToDirectoryForm(targetExport)
   return hrefBetween(fromExportFile, targetDir)
@@ -76,7 +85,7 @@ function rewritePathPart(pathPart: string, ctx: RewriteRootAbsolutePathContext):
   if (isAssetPath(pathPart)) {
     return hrefBetween(ctx.exportFilePath, pathPart.slice(1))
   }
-  return relativePageHref(ctx.exportFilePath, pathPart)
+  return relativePageHref(ctx.exportFilePath, pathPart, ctx.layout)
 }
 
 export function rewriteRootAbsolutePath(
@@ -159,6 +168,7 @@ export function rewriteStylesheetUrls(
 ): string {
   const ctx: RewriteRootAbsolutePathContext = {
     pathMode: options.pathMode,
+    layout: options.layout,
     basePath: options.basePath,
     exportFilePath: options.exportFilePath,
   }
@@ -174,6 +184,7 @@ export function rewriteStylesheetUrls(
 function rewriteCssUrls(html: string, ctx: RewriteRootAbsolutePathContext): string {
   return rewriteStylesheetUrls(html, {
     pathMode: ctx.pathMode,
+    layout: ctx.layout,
     basePath: ctx.basePath,
     exportFilePath: ctx.exportFilePath,
   })
@@ -196,6 +207,7 @@ export function rewriteDocumentUrls(
 ): string {
   const ctx: RewriteRootAbsolutePathContext = {
     pathMode: options.pathMode,
+    layout: options.layout,
     basePath: options.basePath,
     exportFilePath: options.exportFilePath,
   }

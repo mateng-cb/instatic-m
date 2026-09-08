@@ -6,7 +6,7 @@ import {
   type BuildExportTreeInput,
   type ExportFsAdapter,
 } from '@core/static-export/buildExportTree'
-import type { PathMode, StaticExportResult } from '@core/static-export/types'
+import type { ExportLayout, PathMode, StaticExportResult } from '@core/static-export/types'
 import {
   NOT_FOUND_ARTEFACT_URL_PATH,
   getActiveSlot,
@@ -104,10 +104,11 @@ export async function exportPublishedSiteStatic(options: {
   uploadsDir: string
   outDir: string
   pathMode: PathMode
+  layout: ExportLayout
   basePath: string
   expandHoles: BuildExportTreeInput['expandHoles']
 }): Promise<StaticExportResult> {
-  const { uploadsDir, outDir, pathMode, basePath, expandHoles } = options
+  const { uploadsDir, outDir, pathMode, layout, basePath, expandHoles } = options
 
   // "Published" means the current slot has at least one baked HTML page.
   // Do NOT require `/` → index.html: HTML imports often land as `/index` or
@@ -139,6 +140,7 @@ export async function exportPublishedSiteStatic(options: {
   return buildExportTree({
     pages,
     pathMode,
+    layout,
     basePath,
     outDir,
     fs: createExportFsAdapter(uploadsDir, outDir),
