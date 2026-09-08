@@ -3,7 +3,7 @@ import { applyHoleExpansion } from './expandHoles'
 import { exportPathForUrl } from './routeLayout'
 import { rewriteDocumentUrls, rewriteStylesheetUrls } from './rewriteUrls'
 import { scanHtmlForStaticExportIssues } from './scanDynamic'
-import type { ExportReportItem, PathMode, StaticExportResult } from './types'
+import type { ExportLayout, ExportReportItem, PathMode, StaticExportResult } from './types'
 
 export interface ExportPageInput {
   url: string
@@ -20,6 +20,7 @@ export interface ExportFsAdapter {
 export interface BuildExportTreeInput {
   pages: ExportPageInput[]
   pathMode: PathMode
+  layout: ExportLayout
   basePath: string
   /** Absolute export root — returned on the result object only; adapter writes relative to this. */
   outDir: string
@@ -208,9 +209,10 @@ export async function buildExportTree(input: BuildExportTreeInput): Promise<Stat
       assetPaths.add(ref)
     }
 
-    const exportFilePath = exportPathForUrl(page.url)
+    const exportFilePath = exportPathForUrl(page.url, input.layout)
     const rewritten = rewriteDocumentUrls(expanded.html, {
       pathMode: input.pathMode,
+      layout: input.layout,
       basePath: input.basePath,
       exportFilePath,
     })
@@ -244,6 +246,7 @@ export async function buildExportTree(input: BuildExportTreeInput): Promise<Stat
       const payload: Uint8Array | string = isStylesheetPublicPath(publicPath)
         ? rewriteStylesheetUrls(new TextDecoder().decode(bytes), {
             pathMode: input.pathMode,
+            layout: input.layout,
             basePath: input.basePath,
             exportFilePath: relPath,
           })
@@ -261,6 +264,7 @@ export async function buildExportTree(input: BuildExportTreeInput): Promise<Stat
 
   const manifest = {
     pathMode: input.pathMode,
+    layout: input.layout,
     basePath: input.basePath,
     pages: pageUrls,
     report,

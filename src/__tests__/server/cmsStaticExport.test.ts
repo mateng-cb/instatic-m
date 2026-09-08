@@ -229,4 +229,41 @@ describe('POST /admin/api/cms/export-static', () => {
       await safeCleanup(cleanup)
     }
   })
+
+  it('accepts layout: flat and defaults to directory when omitted', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+      const cookie = await completeStepUp(db, await login(db))
+      await seedPublishedHomepage(uploadsDir)
+
+      const flatRes = await handleStaticExportRoutes(
+        exportStaticRequest(cookie, { pathMode: 'relative', layout: 'flat' }),
+        db,
+        { uploadsDir },
+      )
+      expect(flatRes?.status).toBe(200)
+      expect(flatRes?.headers.get('content-type')).toBe('application/zip')
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
+
+  it('returns 400 for an unknown layout value', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+      const cookie = await completeStepUp(db, await login(db))
+      await seedPublishedHomepage(uploadsDir)
+
+      const res = await handleStaticExportRoutes(
+        exportStaticRequest(cookie, { pathMode: 'relative', layout: 'spiral' }),
+        db,
+        { uploadsDir },
+      )
+      expect(res?.status).toBe(400)
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
 })

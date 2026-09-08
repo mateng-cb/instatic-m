@@ -1,8 +1,8 @@
 export type {
+  ExportLayout,
   ExportReportItem,
   ExportSeverity,
   PathMode,
-  StaticExportOptions,
   StaticExportResult,
 } from './types'
 

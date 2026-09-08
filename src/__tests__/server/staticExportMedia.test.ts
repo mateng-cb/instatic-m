@@ -56,6 +56,7 @@ describe('exportPublishedSiteStatic media copy', () => {
       uploadsDir,
       outDir,
       pathMode: 'relative',
+      layout: 'directory',
       basePath: '',
       expandHoles: {
         classify: async () => 'shared',

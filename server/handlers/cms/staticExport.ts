@@ -29,6 +29,7 @@ const EXPORT_STATIC_PATH = `${CMS_API_PREFIX}/export-static`
 
 const StaticExportRequestSchema = Type.Object({
   pathMode: Type.Optional(Type.Union([Type.Literal('relative'), Type.Literal('basePath')])),
+  layout: Type.Optional(Type.Union([Type.Literal('directory'), Type.Literal('flat')])),
   basePath: Type.Optional(Type.String()),
 })
 
@@ -54,6 +55,7 @@ export async function handleStaticExportRoutes(
   if (!body) return badRequest('Invalid static export request body')
 
   const pathMode = body.pathMode ?? 'relative'
+  const layout = body.layout ?? 'directory'
   let basePath = ''
   if (pathMode === 'basePath') {
     if (!body.basePath?.trim()) {
@@ -70,6 +72,7 @@ export async function handleStaticExportRoutes(
       uploadsDir: options.uploadsDir,
       outDir,
       pathMode,
+      layout,
       basePath,
       expandHoles: createStaticExportHoleHooks(db),
     })

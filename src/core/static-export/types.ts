@@ -1,12 +1,10 @@
 export type PathMode = 'basePath' | 'relative'
 
-export interface StaticExportOptions {
-  pathMode: PathMode
-  /** 仅 pathMode==='basePath'；规范化为 '' 或 '/repo'（无尾斜杠） */
-  basePath: string
-  /** 导出根目录（绝对路径） */
-  outDir: string
-}
+/**
+ * 导出文件布局。`directory`：`/x` → `x/index.html`（默认）；
+ * `flat`：`/x` → `x.html`（与 index.html 同级平铺，匹配多数源站的扁平路由）。
+ */
+export type ExportLayout = 'directory' | 'flat'
 
 export type ExportSeverity = 'error' | 'warning' | 'info'
 
