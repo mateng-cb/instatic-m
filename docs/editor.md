@@ -282,7 +282,7 @@ src/admin/pages/site/
 ├── module-picker/              ← module inserter modal + compact context-menu picker
 ├── code-editor/                ← CodeMirror-backed code panel
 ├── toolbar/                    ← top toolbar
-├── preview/                    ← preview iframe runtime
+├── preview/                    ← preview overlay (srcDoc + in-preview link routing)
 ├── explorer-actions/           ← DOM / Site explorer context menus
 ├── agent/                      ← AI agent panel
 ├── hooks/                      ← cross-cutting editor hooks

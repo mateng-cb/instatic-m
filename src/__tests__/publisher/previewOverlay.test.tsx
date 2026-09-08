@@ -6,9 +6,12 @@
  *   2. PreviewOverlay DOM — renders dialog, iframe, close behaviours
  *   3. PreviewOverlay source — sandbox attr, WCAG focus-return pattern
  *   4. Happy-path golden: 2-node tree → expected HTML (Phase 7 requirement)
+ *   5. In-preview link navigation — clicks re-routed to draft-page switches
  *
  * Group 3 uses readFileSync source scanning (same pattern as toolbar.test.ts).
- * Groups 1–2 use @testing-library/react DOM integration (same as settingsModal.test.tsx).
+ * Groups 1–2 and 5 use @testing-library/react DOM integration (same as settingsModal.test.tsx).
+ * Link routing classification itself is unit-tested in
+ * src/__tests__/preview/previewLinkNavigation.test.ts.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
@@ -17,6 +20,7 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { readFileSync } from 'fs'
 import { PreviewOverlay } from '@site/preview/PreviewOverlay'
 import { useEditorStore } from '@site/store/store'
+import { subscribeToasts, type Toast } from '@ui/components/Toast/toastBus'
 import { publishPage } from '@core/publisher'
 import { makeModule, makeRegistry, makePage, makeSite } from './helpers'
 
@@ -252,7 +256,133 @@ describe('PreviewOverlay — DOM rendering', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 3 — PreviewOverlay source-scan assertions
+// 3 — In-preview link navigation (DOM integration)
+// ---------------------------------------------------------------------------
+//
+// The preview iframe renders via srcDoc, so in-site permalinks can never
+// navigate normally (the document base is the admin app). A capture-phase
+// click bridge re-routes them: in-site links switch the draft page, dead
+// links toast, external links open a new tab, anchors stay native.
+
+describe('PreviewOverlay — in-preview link navigation', () => {
+  /** Open the preview on an index page + a /conference page, with `bodyHtml` as the preview document. */
+  function openPreviewWithLinks(bodyHtml: string) {
+    runtimePreviewHtml = `<!DOCTYPE html><html><head><title>Test Site</title></head><body>${bodyHtml}</body></html>`
+    const home = {
+      id: 'page-1',
+      slug: 'index',
+      title: 'Home',
+      rootNodeId: 'root',
+      nodes: {
+        root: {
+          id: 'root', moduleId: 'base.body', props: {}, children: [],
+          breakpointOverrides: {}, locked: false, hidden: false,
+        },
+      },
+    }
+    const conference = {
+      id: 'page-2',
+      slug: 'conference',
+      title: 'Conference',
+      rootNodeId: 'root',
+      nodes: {
+        root: {
+          id: 'root', moduleId: 'base.body', props: {}, children: [],
+          breakpointOverrides: {}, locked: false, hidden: false,
+        },
+      },
+    }
+    const site = makeSite({ name: 'Test Site', pages: [home, conference] })
+    useEditorStore.setState({
+      site,
+      activePageId: 'page-1',
+      previewOpen: true,
+    } as Parameters<typeof useEditorStore.setState>[0])
+  }
+
+  /** Wait for the preview iframe, then dispatch a click on `selector` inside it. */
+  async function clickInPreview(selector: string): Promise<{ anchor: Element; defaultPrevented: boolean }> {
+    const iframeEl = await screen.findByTestId('preview-iframe')
+    const iframe = iframeEl as HTMLIFrameElement
+    expect(iframe.contentDocument).toBeTruthy()
+    const anchor = iframe.contentDocument!.querySelector(selector)
+    expect(anchor).toBeTruthy()
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    anchor!.dispatchEvent(event)
+    return { anchor: anchor!, defaultPrevented: event.defaultPrevented }
+  }
+
+  it('switches to the target draft page on an in-site permalink click', async () => {
+    openPreviewWithLinks('<a href="/conference" id="conf-link">Conference</a>')
+    render(<PreviewOverlay />)
+    const { defaultPrevented } = await clickInPreview('#conf-link')
+    expect(defaultPrevented).toBe(true)
+    expect(useEditorStore.getState().activePageId).toBe('page-2')
+    // The overlay stays open — the preview rebuilds for the new page.
+    expect(useEditorStore.getState().previewOpen).toBe(true)
+  })
+
+  it('toasts on dead in-site links instead of navigating', async () => {
+    const toasts: Toast[] = []
+    const unsubscribe = subscribeToasts((snapshot) => { toasts.splice(0, toasts.length, ...snapshot) })
+
+    openPreviewWithLinks('<a href="/nope" id="dead-link">Nowhere</a>')
+    render(<PreviewOverlay />)
+    const { defaultPrevented } = await clickInPreview('#dead-link')
+    expect(defaultPrevented).toBe(true)
+    expect(useEditorStore.getState().activePageId).toBe('page-1')
+    expect(toasts.some((t) => t.kind === 'info' && t.title === 'No page at this address')).toBe(true)
+
+    unsubscribe()
+  })
+
+  it('opens bare external links in a new tab and never navigates the frame', async () => {
+    const originalOpen = window.open
+    let openedUrl: string | null = null
+    let openedFeatures: string | null = null
+    window.open = ((url: URL | string, _target?: string, features?: string) => {
+      openedUrl = String(url)
+      openedFeatures = features ?? null
+      return null
+    }) as typeof window.open
+
+    openPreviewWithLinks('<a href="https://example.com/tickets" id="ext-link">Tickets</a>')
+    render(<PreviewOverlay />)
+    const { defaultPrevented } = await clickInPreview('#ext-link')
+    expect(defaultPrevented).toBe(true)
+    expect(openedUrl).toBe('https://example.com/tickets')
+    expect(openedFeatures).toContain('noopener')
+    expect(useEditorStore.getState().activePageId).toBe('page-1')
+
+    window.open = originalOpen
+  })
+
+  it('lets target=_blank external links go through the browser untouched', async () => {
+    const originalOpen = window.open
+    window.open = (() => null) as typeof window.open
+
+    openPreviewWithLinks('<a href="https://example.com/x" target="_blank" id="blank-link">X</a>')
+    render(<PreviewOverlay />)
+    const { defaultPrevented } = await clickInPreview('#blank-link')
+    // Not intercepted — allow-popups handles it; window.open was never called
+    // with our re-route (the spy above would only prove a call, so assert the
+    // click itself was left alone).
+    expect(defaultPrevented).toBe(false)
+
+    window.open = originalOpen
+  })
+
+  it('leaves same-document anchor clicks native', async () => {
+    openPreviewWithLinks('<a href="#speakers" id="hash-link">Speakers</a>')
+    render(<PreviewOverlay />)
+    const { defaultPrevented } = await clickInPreview('#hash-link')
+    expect(defaultPrevented).toBe(false)
+    expect(useEditorStore.getState().activePageId).toBe('page-1')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 4 — PreviewOverlay source-scan assertions
 // ---------------------------------------------------------------------------
 
 describe('PreviewOverlay — source enforcement', () => {
@@ -269,9 +399,15 @@ describe('PreviewOverlay — source enforcement', () => {
     expect(overlaySrc).toContain('data-testid="preview-iframe"')
   })
 
-  it('iframe uses sandbox="" (fully sandboxed — maximum security)', () => {
-    // sandbox="" with no value applies all restrictions (no scripts, no navigation, etc.)
-    expect(overlaySrc).toContain('sandbox=""')
+  it('iframe stays script-less: same-origin DOM access + popups, never allow-scripts', () => {
+    // allow-same-origin lets the parent re-route link clicks (in-preview
+    // navigation); allow-popups lets target=_blank external links open a tab.
+    // allow-scripts stays absent — the preview document itself cannot execute.
+    // (Match the attribute value exactly; prose mentioning the token would
+    // false-positive a plain substring scan.)
+    const sandboxValues = [...overlaySrc.matchAll(/sandbox="([^"]*)"/g)].map((m) => m[1]!)
+    expect(sandboxValues.length).toBeGreaterThan(0)
+    for (const value of sandboxValues) expect(value).toBe('allow-same-origin allow-popups')
   })
 
   it('handles Escape key to close (Guideline #225)', () => {
