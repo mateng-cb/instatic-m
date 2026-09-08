@@ -65,6 +65,7 @@ export function applyIframeBodyReset(
   iframeDoc: Document,
   breakpointId: string,
   interaction: IframeInteraction,
+  viewportHeight: number = CANVAS_VIEWPORT_HEIGHT,
 ): void {
   iframeDoc.body.setAttribute('data-breakpoint-id', breakpointId)
   iframeDoc.body.dataset.instaticIframeInteraction = interaction
@@ -80,7 +81,7 @@ export function applyIframeBodyReset(
   }
   iframeDoc.documentElement.style.height = 'auto'
   iframeDoc.body.style.height = 'auto'
-  iframeDoc.body.style.minHeight = `${CANVAS_VIEWPORT_HEIGHT}px`
+  iframeDoc.body.style.minHeight = `${viewportHeight}px`
   // Design frames grow to fit their content on the parent canvas. The iframe
   // document itself must never expose root scrollbars while that fit settles
   // or because authored CSS sets html/body overflow.

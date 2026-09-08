@@ -57,7 +57,14 @@ IframeFrameSurface
 
 The canvas frame grows to content height (so no inner scrollbar appears on the infinite surface). `vh`/`vmin`/`vmax` units size against the iframe element's height — writing a new height feeds back into the viewport unit, which grows the content, which fires the observer again. The frame measures content inside a `requestAnimationFrame`, caps consecutive self-driven resizes at 60, and resets the cap on any DOM mutation that didn't come from its own height writes. When a long page is replaced by a shorter page, the measurement ignores `documentElement.scrollHeight` if it is only reporting the old iframe viewport floor, so frames can shrink to the new body content height.
 
-Design frames override `html` and `body` to `height: auto` but give the iframe body a fixed `min-height` equal to `CANVAS_VIEWPORT_HEIGHT` (800 px). This makes the page body occupy the visible artboard floor for short pages without using `100vh`, which would point back at the auto-sized iframe height and reintroduce the feedback loop.
+Design frames override `html` and `body` to `height: auto` but give the iframe body a fixed `min-height` equal to the breakpoint's viewport height. This makes the page body occupy the visible artboard floor for short pages without using `100vh`, which would point back at the auto-sized iframe height and reintroduce the feedback loop.
+
+Viewport units in injected author CSS (`ClassStyleInjector`, `UserStylesheetInjector`) are additionally rewritten from viewport units to `px` (`resolveViewportUnits.ts`) against a fixed basis, so they can never feed the grow-to-content loop — but that basis is now **per-frame real**:
+
+- **Design frames** resolve against the breakpoint's declared viewport (`breakpointViewport` in `src/core/page-tree/breakpoint.ts`): the breakpoint's `height` when set, else a device-class default inferred from `width` (≤480 px → 667, ≤1024 px → 1024, wider → 800). A `100vh` mobile hero designed for a 375×667 phone now previews at 667 px instead of a flat 800 px. The height is editable per breakpoint in the context-selector dialog ("Frame height").
+- **Live frames** resolve against the iframe's real measured viewport (`useLiveIframeViewport`, a `ResizeObserver` on the iframe element). The live frame is its own scroll viewport with a content-independent height, so resolving against reality has no feedback loop — and it is exactly the height a visitor would see.
+
+The published page is untouched: it always keeps real viewport units resolved by the visitor's browser.
 
 ---
 

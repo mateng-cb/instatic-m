@@ -21,7 +21,8 @@
  * (`vmin`/`vmax`) stay dimensionally consistent.
  *
  * Resolving the units to a fixed device viewport (width = the breakpoint width,
- * height = `CANVAS_VIEWPORT_HEIGHT`) breaks the feedback loop entirely: content
+ * height = the breakpoint's viewport height — `breakpointViewport`, or the live
+ * frame's real measured size) breaks the feedback loop entirely: content
  * height no longer depends on frame height, so the frame settles at the real
  * content height in a single pass, and `vh` renders at a sane, device-like
  * size.
@@ -39,10 +40,10 @@
  */
 
 /**
- * Representative device viewport height (px) that height-relative viewport
- * units resolve against in the canvas. ~800px matches a typical laptop/phone
- * viewport across every breakpoint width, so `100vh` previews at a believable
- * device height instead of the grown frame height.
+ * Legacy fallback viewport height (px) for callers without a declared
+ * breakpoint height — `defaultBreakpointViewportHeight` keeps wide frames at
+ * this value. `100vh` previews at a believable device height instead of the
+ * grown frame height.
  */
 export const CANVAS_VIEWPORT_HEIGHT = 800
 

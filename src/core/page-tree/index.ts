@@ -68,7 +68,13 @@ export type {
 } from './siteExplorer'
 
 // Defaults
-export { DEFAULT_BREAKPOINTS, breakpointMediaQuery, defaultBreakpointMediaQuery } from './breakpoint'
+export {
+  DEFAULT_BREAKPOINTS,
+  breakpointMediaQuery,
+  breakpointViewport,
+  defaultBreakpointMediaQuery,
+  defaultBreakpointViewportHeight,
+} from './breakpoint'
 export { DEFAULT_SITE_SETTINGS } from './siteSettings'
 
 // Condition helpers

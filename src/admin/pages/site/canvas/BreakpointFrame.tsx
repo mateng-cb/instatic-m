@@ -18,7 +18,7 @@
  */
 
 import { useRef, useState, type CSSProperties } from 'react'
-import type { Page, Breakpoint } from '@core/page-tree'
+import { breakpointViewport, type Page, type Breakpoint } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { CanvasComposedTree } from './CanvasComposedTree'
 import { BreakpointSelectionOverlay } from './BreakpointSelectionOverlay'
@@ -223,6 +223,7 @@ export function BreakpointFrame({
           ref={handleIframeRef}
           breakpointId={breakpoint.id}
           width={breakpoint.width}
+          viewportHeight={breakpointViewport(breakpoint).height}
           onClick={handleEmptyFrameClick}
           onCursorMove={handleFrameCursorMove}
           onCursorLeave={handleFrameCursorLeave}

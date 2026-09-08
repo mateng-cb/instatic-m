@@ -22,6 +22,13 @@ export const BreakpointSchema = Type.Object({
   /** Viewport width in pixels */
   width: Type.Number(),
   /**
+   * Viewport height in pixels — the basis the editor canvas uses to resolve
+   * `vh`/`vmin`/… units in class rules for this breakpoint's frame. Optional:
+   * legacy breakpoints without it fall back to `defaultBreakpointViewportHeight`
+   * inferred from `width`.
+   */
+  height: Type.Optional(Type.Number()),
+  /**
    * CSS media query used when this viewport context emits class overrides.
    * `width` is the editor frame size; `mediaQuery` is the published condition.
    * Missing legacy values default to `(max-width: <width>px)` in
@@ -51,10 +58,30 @@ export type Breakpoint = Static<typeof BreakpointSchema>
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_BREAKPOINTS: Breakpoint[] = [
-  { id: 'mobile',  label: 'Mobile',  width: 375,  mediaQuery: '(max-width: 375px)',  icon: 'smartphone' },
-  { id: 'tablet',  label: 'Tablet',  width: 768,  mediaQuery: '(max-width: 768px)',  icon: 'tablet'     },
-  { id: 'desktop', label: 'Desktop', width: 1440, mediaQuery: '(max-width: 1440px)', icon: 'monitor'    },
+  { id: 'mobile',  label: 'Mobile',  width: 375,  height: 667,  mediaQuery: '(max-width: 375px)',  icon: 'smartphone' },
+  { id: 'tablet',  label: 'Tablet',  width: 768,  height: 1024, mediaQuery: '(max-width: 768px)',  icon: 'tablet'     },
+  { id: 'desktop', label: 'Desktop', width: 1440, height: 800,  mediaQuery: '(max-width: 1440px)', icon: 'monitor'    },
 ]
+
+/**
+ * Viewport height used to resolve viewport units for breakpoints that don't
+ * define one. Phone-class widths get a classic 2x phone viewport (375×667 —
+ * the design basis most mobile hero art is drawn for), tablets get a portrait
+ * iPad, everything wider keeps the historic 800px canvas height.
+ */
+export function defaultBreakpointViewportHeight(width: number): number {
+  if (width <= 480) return 667
+  if (width <= 1024) return 1024
+  return 800
+}
+
+/** The viewport (width × height) the editor canvas resolves viewport units against. */
+export function breakpointViewport(breakpoint: Pick<Breakpoint, 'width' | 'height'>): { width: number; height: number } {
+  return {
+    width: breakpoint.width,
+    height: breakpoint.height ?? defaultBreakpointViewportHeight(breakpoint.width),
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tolerant parsing
@@ -85,6 +112,7 @@ export function parseBreakpoint(raw: unknown): Breakpoint | null {
     width: r.width,
     mediaQuery,
     icon: typeof r.icon === 'string' ? r.icon : 'monitor',
+    ...(typeof r.height === 'number' ? { height: r.height } : {}),
     ...(typeof r.previewFrame === 'boolean' ? { previewFrame: r.previewFrame } : {}),
   }
 }

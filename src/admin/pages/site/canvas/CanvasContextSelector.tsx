@@ -16,7 +16,12 @@
 import { useRef, useState, type FormEvent, type SyntheticEvent } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { Breakpoint, Condition, ConditionDef } from '@core/page-tree'
-import { breakpointMediaQuery, conditionLabel, defaultBreakpointMediaQuery } from '@core/page-tree'
+import {
+  breakpointMediaQuery,
+  conditionLabel,
+  defaultBreakpointMediaQuery,
+  defaultBreakpointViewportHeight,
+} from '@core/page-tree'
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@ui/components/ContextMenu'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
@@ -315,6 +320,8 @@ function ContextDialog({ mode, onClose }: { mode: Exclude<DialogState, null>; on
   const [range, setRange] = useState({ min: '', max: '', unit: 'px' })
   // Breakpoint fields.
   const [bpWidth, setBpWidth] = useState(editBp ? editBp.width : 768)
+  // Height as a raw string so it can be empty (= infer a default from width).
+  const [bpHeight, setBpHeight] = useState(editBp?.height != null ? String(editBp.height) : '')
   const [bpMediaQuery, setBpMediaQuery] = useState(
     editBp ? breakpointMediaQuery(editBp) : defaultBreakpointMediaQuery(768),
   )
@@ -352,10 +359,13 @@ function ContextDialog({ mode, onClose }: { mode: Exclude<DialogState, null>; on
         return
       }
       const name = label.trim() || `${bpWidth}px`
+      const heightNum = Number(bpHeight)
+      const height = bpHeight.trim() !== '' && heightNum > 0 ? heightNum : undefined
       if (isEditBp && editBp) {
         updateBreakpoint(editBp.id, {
           label: name,
           width: bpWidth,
+          height,
           mediaQuery,
           icon: bpIcon,
           previewFrame: bpPreview,
@@ -365,6 +375,7 @@ function ContextDialog({ mode, onClose }: { mode: Exclude<DialogState, null>; on
         const bp = addBreakpoint({
           label: name,
           width: bpWidth,
+          height,
           mediaQuery,
           icon: bpIcon,
           previewFrame: bpPreview,
@@ -462,6 +473,22 @@ function ContextDialog({ mode, onClose }: { mode: Exclude<DialogState, null>; on
                 aria-label="Viewport frame width in pixels"
                 onChange={(e) => handleViewportWidthChange(Number(e.target.value))}
               />
+            </div>
+            <div className={styles.field}>
+              <span className={styles.label}>Frame height (px)</span>
+              <Input
+                fieldSize="sm"
+                type="number"
+                inputMode="numeric"
+                value={bpHeight}
+                min={1}
+                placeholder={String(defaultBreakpointViewportHeight(bpWidth || 0))}
+                aria-label="Viewport frame height in pixels"
+                onChange={(e) => { setBpHeight(e.target.value); setError(null) }}
+              />
+              <p className={styles.hint} role="status">
+                The height vh-style units resolve against in this frame. Empty uses the default for the width.
+              </p>
             </div>
             <div className={styles.field}>
               <span className={styles.label}>CSS media query</span>
