@@ -651,14 +651,16 @@ The orchestrator is `publishSiteToGithub` in `server/publish/githubPublish.ts`. 
 |--------|------|--------|
 | `GET` | `/admin/api/cms/github-publish/settings` | Wire-safe view; `pages.publish` |
 | `PUT` | `/admin/api/cms/github-publish/settings` | Upsert repo/branch/`targetDir`/`basePath`/PAT; `pages.publish` |
-| `GET` | `/admin/api/cms/github-publish/progress` | In-flight publish progress (single-slot in-memory registry); `pages.publish` |
-| `POST` | `/admin/api/cms/publish-github` | Optional body overrides (`branch`/`targetDir`/`basePath`/`commitMessage`); `pages.publish` + step-up |
+| `GET` | `/admin/api/cms/github-publish/progress` | Job view — running progress or settled outcome (single-slot in-memory registry); `pages.publish` |
+| `POST` | `/admin/api/cms/publish-github` | Start the background job; optional body overrides (`branch`/`targetDir`/`basePath`/`commitMessage`); answers **202** `{ started: true }` or **409** when a job is already running; `pages.publish` + step-up |
 
-Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `publishToGithub`, `getGithubPublishProgress` in `src/core/persistence/cmsGithubPublish.ts`.
+Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `startGithubPublish`, `getGithubPublishJob` in `src/core/persistence/cmsGithubPublish.ts`.
 
-The push uploads blobs **4 at a time**, each GitHub API request carrying a **60 s timeout** (`AbortSignal.timeout`), so a black-holed connection fails fast instead of hanging the publish forever. While the POST is pending, the dialog polls the progress endpoint (1 s interval) and shows `Uploading files 45/132 — path` / `Creating commit on GitHub…`. Every push also writes a root `.nojekyll` blob — GitHub Pages' Jekyll build would otherwise drop every `_instatic/` asset.
+The push runs as a **background job**, not inside the POST: a full-site Git Data API push takes minutes — longer than reverse-proxy response timeouts (Cloudflare cuts synchronous responses at ~100 s, which surfaced to editors as a 502 page). The job lives in the single-slot registry (`server/publish/githubPublishJobRegistry.ts`); the dialog polls the job endpoint (1 s interval) for live progress (`Uploading files 45/132 — path` / `Creating commit on GitHub…`) and settles on its outcome. A vanished job (`job: null` after a start) means the server restarted mid-run. Opening the dialog while a job runs adopts it — the form locks and shows the same progress.
 
-POST success: `{ commitSha, repoUrl, branch, report }`.
+The push uploads blobs **4 at a time**, each GitHub API request carrying a **60 s timeout** (`AbortSignal.timeout`), so a black-holed connection fails fast instead of hanging the job forever. Every push also writes a root `.nojekyll` blob — GitHub Pages' Jekyll build would otherwise drop every `_instatic/` asset.
+
+Job outcome on the progress endpoint: `state: 'succeeded'` with `result: { commitSha, repoUrl, branch, report }`, or `state: 'failed'` with `failure: { code, message }` (`not-published` / `per-visitor-hole` / `token-missing` / `config-incomplete` / `push-failed` / `internal`).
 
 ### Admin UI
 
@@ -668,10 +670,11 @@ POST success: `{ commitSha, repoUrl, branch, report }`.
 ### Code map
 
 ```text
-server/publish/githubPublish.ts           — export then push orchestrator
-server/publish/githubPublishProgress.ts  — in-memory progress registry (single slot)
-server/github/gitDataApiPush.ts         — Git Data API (no local git)
-server/github/parseRepoUrl.ts           — repo URL → owner/repo
+server/publish/githubPublish.ts             — export then push orchestrator
+server/publish/githubPublishJob.ts          — background job runner (start + error mapping)
+server/publish/githubPublishJobRegistry.ts  — in-memory single-slot job registry
+server/github/gitDataApiPush.ts             — Git Data API (no local git)
+server/github/parseRepoUrl.ts               — repo URL → owner/repo
 server/repositories/githubPublishSettings.ts
 server/handlers/cms/githubPublish.ts
 src/core/persistence/cmsGithubPublish.ts

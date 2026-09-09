@@ -1,11 +1,11 @@
 import { apiRequest, type FetchLike } from '@core/http'
 import {
-  GithubPublishProgressResponseSchema,
+  GithubPublishJobResponseSchema,
   GithubPublishSettingsViewSchema,
-  PublishGithubResultSchema,
-  type GithubPublishProgressResponse,
+  StartGithubPublishResponseSchema,
+  type GithubPublishJobResponse,
   type GithubPublishSettingsView,
-  type PublishGithubResult,
+  type StartGithubPublishResponse,
 } from './responseSchemas'
 
 export async function getGithubPublishSettings(
@@ -39,18 +39,18 @@ export async function putGithubPublishSettings(
   })
 }
 
-export async function getGithubPublishProgress(
+export async function getGithubPublishJob(
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
-): Promise<GithubPublishProgressResponse> {
+): Promise<GithubPublishJobResponse> {
   return apiRequest(`${basePath}/github-publish/progress`, {
-    schema: GithubPublishProgressResponseSchema,
+    schema: GithubPublishJobResponseSchema,
     fetchImpl,
     fallbackMessage: 'GitHub publish progress request failed',
   })
 }
 
-export async function publishToGithub(
+export async function startGithubPublish(
   body: {
     branch?: string
     targetDir?: string
@@ -59,12 +59,12 @@ export async function publishToGithub(
   } = {},
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
-): Promise<PublishGithubResult> {
+): Promise<StartGithubPublishResponse> {
   return apiRequest(`${basePath}/publish-github`, {
     method: 'POST',
     body,
-    schema: PublishGithubResultSchema,
+    schema: StartGithubPublishResponseSchema,
     fetchImpl,
-    fallbackMessage: 'GitHub publish failed',
+    fallbackMessage: 'Starting GitHub publish failed',
   })
 }
