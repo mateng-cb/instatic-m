@@ -248,7 +248,7 @@ export function PublishButton({
       ariaLabel: syncError,
     } :
     saveStatus?.state === 'offline' ? {
-      label: 'Offline \u2014 reconnecting',
+      label: 'Offline — reconnecting',
       tone: 'warning' as const,
     } :
     saveStatus?.state === 'connecting' || saveStatus?.state === 'loading' ? {
