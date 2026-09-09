@@ -130,6 +130,7 @@ Three categories, three voices:
 | [design.md](design.md)      | Visual design system: principles, tokens, surface systems, UI primitives, forbidden patterns |
 | [server.md](server.md)      | Server deep dive: boot sequence, router, handlers, auth, DB adapter, publishing, plugin runtime |
 | [editor.md](editor.md)      | Admin + editor deep dive: routing, workspaces, editor store, canvas, sidebars, spotlight |
+| [site-maintenance-guide.md](site-maintenance-guide.md) | Editor-facing walkthrough (中文): daily site maintenance workflows on a live site |
 | [CONVENTIONS.md](CONVENTIONS.md) | How docs in this repo are structured and written (read before authoring) |
 
 ### Features
