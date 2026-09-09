@@ -31,10 +31,11 @@ function failureFor(err: unknown): GithubPublishJobFailure {
   if (err instanceof GithubPublishError) {
     if (err.code === 'push-failed') {
       console.error('[github-publish]', err)
-      return {
-        code: 'push-failed',
-        message: 'GitHub push failed. The export directory was kept on the server for retry or inspection.',
-      }
+      // `GithubPublishError.message` for push-failed is the raw Git Data API
+      // failure text ("Branch does not exist: gh-pages. …", timeout, …) —
+      // self-written diagnostics with no disk paths, safe and crucial to show:
+      // "push failed" alone leaves the operator nothing actionable.
+      return { code: 'push-failed', message: err.message }
     }
     return { code: err.code, message: err.message }
   }

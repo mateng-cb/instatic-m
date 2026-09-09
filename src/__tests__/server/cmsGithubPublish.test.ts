@@ -109,6 +109,7 @@ function progressRequest(cookie?: string): Request {
 
 interface JobView {
   state: 'running' | 'succeeded' | 'failed'
+  startedAt: number
   failure?: { code: string; message: string }
 }
 
@@ -262,9 +263,14 @@ describe('GitHub publish HTTP handlers', () => {
         { uploadsDir: '/tmp/unused' },
       )
       expect(res?.status).toBe(202)
-      expect(await res!.json()).toEqual({ started: true })
+      const startBody = await res!.json() as { started: boolean; startedAt: number }
+      expect(startBody.started).toBe(true)
+      // The 202 carries the claimed job's identity so the client poller can
+      // tell this run apart from the previous job's settled leftovers.
+      expect(startBody.startedAt).toBeGreaterThan(0)
 
       const job = await waitForSettledJob(db, cookie)
+      expect(job.startedAt).toBe(startBody.startedAt)
       expect(job.state).toBe('failed')
       expect(job.failure?.code).toBe('token-missing')
       expect(job.failure?.message).toMatch(/token/i)

@@ -474,6 +474,9 @@ export type GithubPublishJobResponse = Static<typeof GithubPublishJobResponseSch
 
 export const StartGithubPublishResponseSchema = Type.Object({
   started: Type.Boolean(),
+  /** epoch ms — identity of the freshly claimed job slot; the poller only
+   * settles on a job whose startedAt matches, ignoring prior settled runs. */
+  startedAt: Type.Number(),
 })
 
 export type StartGithubPublishResponse = Static<typeof StartGithubPublishResponseSchema>
