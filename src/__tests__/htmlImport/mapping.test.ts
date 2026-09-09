@@ -1446,6 +1446,13 @@ describe('base.video — <video> import mapping', () => {
     expect(node.props.videoUrl).toBe('clip.mp4')
   })
 
+  it('<video poster="..."> → base.video keeps poster for asset rewrite', () => {
+    const node = single('<video src="clip.mp4" poster="poster.jpg"></video>')
+    expect(node.moduleId).toBe('base.video')
+    expect(node.props.videoUrl).toBe('clip.mp4')
+    expect(node.props.poster).toBe('poster.jpg')
+  })
+
   it('<video controls loop> → base.video with controls and loop true', () => {
     const node = single('<video src="clip.mp4" controls loop></video>')
     expect(node.moduleId).toBe('base.video')

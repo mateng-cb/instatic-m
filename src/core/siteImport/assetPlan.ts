@@ -4,9 +4,9 @@
  * `applyAssetRewrites` can do exact-string replacement.
  *
  * Two sources of asset references:
- *   1. PageNode props — `src`, `href`, `srcset` values set by the HTML
- *      importer from element attributes, plus imported `htmlAttributes` bags
- *      such as `data-bg-src`.
+ *   1. PageNode props — `src`, `href`, `srcset`, `videoUrl`, `poster` values
+ *      set by the HTML importer from element attributes, plus imported
+ *      `htmlAttributes` bags such as `data-bg-src`.
  *   2. CSS rule styles — `url(...)` payloads recorded by Phase 1's
  *      `cssToStyleRules` in the returned `AssetRef[]`.
  *
@@ -44,7 +44,14 @@ import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
 // Props that may contain relative asset URLs in page nodes
 // ---------------------------------------------------------------------------
 
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+const URL_BEARING_PROPS: ReadonlySet<string> = new Set([
+  'src',
+  'href',
+  'srcset',
+  // base.video：原生 <video src>/<source> 写入 videoUrl，可选 poster。
+  'videoUrl',
+  'poster',
+])
 
 // ---------------------------------------------------------------------------
 // Public types

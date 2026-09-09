@@ -7,9 +7,9 @@
  * newly-uploaded `newUrl`.
  *
  * Two surfaces to rewrite:
- *   1. Page node props — string values for `src`, `href`, `srcset` that equal
- *      a FileMap key after normalisation by `assetPlan`, plus imported
- *      `htmlAttributes` bags such as `data-bg-src`.
+ *   1. Page node props — string values for `src`, `href`, `srcset`, `videoUrl`,
+ *      `poster` that equal a FileMap key after normalisation by `assetPlan`,
+ *      plus imported `htmlAttributes` bags such as `data-bg-src`.
  *   2. CSS rule `styles` and `contextStyles` — `url('key')` expressions where
  *      the URL payload is a normalised FileMap key.
  *
@@ -26,7 +26,13 @@ import type { ImportPlan, ImportStylesheet, NewStyleRule, ImportFontFamily } fro
 // Props that may carry normalised FileMap keys in page nodes
 // ---------------------------------------------------------------------------
 
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+const URL_BEARING_PROPS: ReadonlySet<string> = new Set([
+  'src',
+  'href',
+  'srcset',
+  'videoUrl',
+  'poster',
+])
 
 // ---------------------------------------------------------------------------
 // Public function

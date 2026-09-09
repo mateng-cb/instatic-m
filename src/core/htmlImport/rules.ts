@@ -609,10 +609,13 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         || el.querySelector('source')?.getAttribute('src')
         || ''
 
+      const poster = attr(el, 'poster') || ''
+
       return {
         moduleId: 'base.video',
         props: {
           videoUrl,
+          ...(poster ? { poster } : {}),
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),
