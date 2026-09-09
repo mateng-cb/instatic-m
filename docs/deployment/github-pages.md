@@ -15,7 +15,7 @@ GitHub Pages is a **static host**. Instatic does not run the Bun server on Pages
 | 3 | Set `INSTATIC_SECRET_KEY` on the server so the PAT can be encrypted at rest |
 | 4 | Configure repo URL, branch, `targetDir`, `basePath`, and PAT under **Settings → Publishing** (or in the Publish dialog) |
 | 5 | Enable GitHub Pages: **Deploy from a branch**, branch = your target, folder = `/` or `/docs` |
-| 6 | **Publish → Publish to GitHub…** — export + push in one step (step-up gated) |
+| 6 | **Publish → Publish to GitHub…** — starts the export + push as a background job (step-up gated); the dialog polls live progress until the commit lands |
 
 | Site type | Typical URL | `basePath` |
 |---|---|---|
@@ -29,7 +29,7 @@ GitHub Pages is a **static host**. Instatic does not run the Bun server on Pages
 
 ### Local Publish first
 
-GitHub publish reads the same published slot as static export. If the site has never been published, the push endpoint returns **409** (`Site has not been published yet.`).
+GitHub publish reads the same published slot as static export. If the site has never been published, the background job fails with `failure.code: not-published` (`Site has not been published yet.`) — the start endpoint still answers **202**; the dialog surfaces the failure while polling.
 
 Workflow:
 
@@ -59,7 +59,7 @@ Create a PAT on GitHub with write access to repository contents:
 | Classic PAT | `repo` scope, or minimum **`contents: write`** on the target repo |
 | Fine-grained PAT | Repository access to the target repo; **Contents: Read and write** |
 
-Instatic uses the Git Data API (`server/github/gitDataApiPush.ts`) — no local `git` binary. Blobs upload 4 at a time with a 60 s per-request timeout; the token is sent only to `api.github.com` during push; it is not written to logs or the export tree. While a push is running, the publish dialog polls `GET /admin/api/cms/github-publish/progress` and shows per-file upload progress (`Uploading files 45/132 — path`).
+Instatic uses the Git Data API (`server/github/gitDataApiPush.ts`) — no local `git` binary. Blobs upload 4 at a time with a 60 s per-request timeout; the token is sent only to `api.github.com` during push; it is not written to logs or the export tree. The push runs as a **background job** (a full-site push takes minutes — longer than reverse-proxy timeouts such as Cloudflare's ~100 s synchronous limit), and the publish dialog polls `GET /admin/api/cms/github-publish/progress` (1 s interval) for per-file upload progress (`Uploading files 45/132 — path`) and the final outcome.
 
 Every push writes a root **`.nojekyll`** marker into the target tree. GitHub Pages runs Jekyll by default and Jekyll silently drops `_`-prefixed paths — all Instatic assets live under `_instatic/`, so without the marker every stylesheet and runtime script would 404 on Pages.
 
@@ -106,7 +106,7 @@ Two entry points share the same persisted row (`github_publish_settings`, single
 | Location | Purpose |
 |---|---|
 | **Settings → Publishing** → GitHub Pages block | Save defaults and PAT (`putGithubPublishSettings`). Does not push. |
-| **Site editor → Publish menu → Publish to GitHub…** | `GithubPublishDialog` — loads settings, saves on submit, then runs push |
+| **Site editor → Publish menu → Publish to GitHub…** | `GithubPublishDialog` — loads settings, saves on submit, starts the push job, polls until it settles (adopting an already-running job if the dialog opens mid-push) |
 
 Fields:
 
@@ -164,16 +164,22 @@ If push fails after a successful export, the server keeps the temp export direct
 
 Handler: `server/handlers/cms/githubPublish.ts`. Client helpers: `src/core/persistence/cmsGithubPublish.ts`.
 
-POST success body includes `commitSha`, `repoUrl`, `branch`, and Phase A `report` (export warnings, e.g. CMS forms).
-
-Common errors:
+`POST /publish-github` starts the job and answers **202** `{ started: true }` immediately — the push itself runs in the background and its outcome arrives on the progress endpoint (`job.state: 'succeeded'` with `result: { commitSha, repoUrl, branch, report }`, or `'failed'` with `failure`).
 
 | Status | Cause |
 |---|---|
-| `409` | Site not published locally |
-| `422` | Per-visitor dynamic hole — same as static export |
-| `400` | Missing token or incomplete repo config |
-| `502` | GitHub push failed (export dir kept on server) |
+| `202` | Job started — poll the progress endpoint for the outcome |
+| `409` | A GitHub publish job is already running (single slot) |
+
+Job `failure.code` values (surfaced by the dialog as the failure message):
+
+| Code | Cause |
+|---|---|
+| `not-published` | Site not published locally |
+| `per-visitor-hole` | Per-visitor dynamic hole — same as static export |
+| `token-missing` / `config-incomplete` | Missing token or incomplete repo config |
+| `push-failed` | GitHub push failed (export dir kept on server) |
+| `internal` | Unexpected server error |
 
 ---
 
@@ -192,9 +198,10 @@ Common errors:
 - [docs/deployment/README.md](README.md) — deployment index and `INSTATIC_SECRET_KEY`
 - Source-of-truth files:
   - `server/publish/githubPublish.ts` — orchestrator
+  - `server/publish/githubPublishJob.ts` + `githubPublishJobRegistry.ts` — background job runner + single-slot registry
   - `server/github/gitDataApiPush.ts` — Git Data API push
   - `server/repositories/githubPublishSettings.ts` — settings + PAT encryption
   - `server/handlers/cms/githubPublish.ts` — HTTP routes
   - `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` — push dialog
   - `src/admin/modals/Settings/sections/PublishingSection.tsx` — settings block
-- Tests: `src/__tests__/server/githubPublishOrchestrator.test.ts`, `src/__tests__/server/githubGitDataApiPush.test.ts`, `src/__tests__/server/githubPublishSettings.test.ts`
+- Tests: `src/__tests__/server/githubPublishOrchestrator.test.ts`, `src/__tests__/server/githubGitDataApiPush.test.ts`, `src/__tests__/server/githubPublishSettings.test.ts`, `src/__tests__/server/githubPublishJobRegistry.test.ts`, `src/__tests__/server/cmsGithubPublish.test.ts`

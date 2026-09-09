@@ -1,19 +1,24 @@
 /**
- * GithubPublishDialog — configure GitHub Pages target + PAT, then push the
- * published static export via `publishToGithub` (step-up gated).
+ * GithubPublishDialog — configure GitHub Pages target + PAT, then start the
+ * static-export + Git Data API push as a background job (step-up gated).
  *
  * Opened from the Site editor Publish menu. Settings are loaded on open and
  * persisted with `putGithubPublishSettings` before the push so one Publish
  * click both saves defaults and ships.
+ *
+ * The publish POST returns 202 immediately (a full-site push runs minutes —
+ * longer than reverse-proxy timeouts), so the dialog polls the job endpoint
+ * until it settles and toasts the outcome. Opening the dialog while a job is
+ * running adopts it: the form locks and shows the same live progress.
  */
 import { useEffect, useId, useState } from 'react'
 import {
-  getGithubPublishProgress,
+  getGithubPublishJob,
   getGithubPublishSettings,
-  publishToGithub,
   putGithubPublishSettings,
+  startGithubPublish,
 } from '@core/persistence'
-import type { GithubPublishProgress } from '@core/persistence'
+import type { GithubPublishJob } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { Dialog } from '@ui/components/Dialog'
@@ -26,6 +31,8 @@ const FORM_ID = 'github-publish-form'
 const DEFAULT_BRANCH = 'gh-pages'
 /** Mirrors the server-side default in server/github/gitDataApiPush.ts. */
 const DEFAULT_COMMIT_MESSAGE = 'Publish site from Instatic'
+/** Poll cadence for the background job; the push itself is minutes-long. */
+const JOB_POLL_INTERVAL_MS = 1000
 
 interface GithubPublishDialogProps {
   open: boolean
@@ -43,7 +50,7 @@ interface PublishFormValues {
   clearToken: boolean
 }
 
-type PublishResult = Awaited<ReturnType<typeof publishToGithub>>
+type PublishResult = NonNullable<GithubPublishJob['result']>
 
 // ---------------------------------------------------------------------------
 // Module-level helpers (extracted so the React Compiler can compile the
@@ -54,30 +61,26 @@ function shortSha(sha: string): string {
   return sha.slice(0, 7)
 }
 
-/** Human label for an in-flight publish; null → nothing to show. */
-function progressLabel(progress: GithubPublishProgress): string | null {
-  if (!progress.running) return null
-  if (progress.phase === 'exporting') return 'Preparing export…'
-  if (progress.phase === 'uploading') {
-    const base = `Uploading files ${progress.uploaded}/${progress.total}`
-    return progress.currentPath ? `${base} — ${progress.currentPath}` : base
+/** Human label for a running job; null → nothing to show. */
+function jobLabel(job: GithubPublishJob): string | null {
+  if (job.state !== 'running') return null
+  if (job.phase === 'exporting') return 'Preparing export…'
+  if (job.phase === 'uploading') {
+    const base = `Uploading files ${job.uploaded}/${job.total}`
+    return job.currentPath ? `${base} — ${job.currentPath}` : base
   }
-  if (progress.phase === 'finalizing') return 'Creating commit on GitHub…'
+  if (job.phase === 'finalizing') return 'Creating commit on GitHub…'
   return null
 }
 
-function commitUrlFor(owner: string, repo: string, sha: string): string | null {
-  if (!owner || !repo || !sha) return null
-  return `https://github.com/${owner}/${repo}/commit/${sha}`
+function commitUrlFor(repoUrl: string, sha: string): string | null {
+  if (!repoUrl || !sha) return null
+  return `${repoUrl.replace(/\/+$/, '')}/commit/${sha}`
 }
 
-function toastPublishSuccess(
-  result: PublishResult,
-  owner: string,
-  repo: string,
-): void {
+function toastPublishSuccess(result: PublishResult): void {
   const sha = shortSha(result.commitSha)
-  const url = commitUrlFor(owner, repo, result.commitSha)
+  const url = commitUrlFor(result.repoUrl, result.commitSha)
   pushToast({
     kind: 'success',
     title: 'Published to GitHub',
@@ -91,6 +94,15 @@ function toastPublishSuccess(
     kind: 'warning',
     title: 'Export warnings',
     body: warnings.map((w) => w.message).slice(0, 3).join(' · '),
+    location: 'site-editor',
+  })
+}
+
+function toastPublishFailure(message: string): void {
+  pushToast({
+    kind: 'error',
+    title: 'GitHub publish failed',
+    body: message,
     location: 'site-editor',
   })
 }
@@ -125,13 +137,18 @@ async function loadSettings(
   }
 }
 
-async function runGithubPublish(
+/**
+ * Validate the form, persist settings, start the background job (step-up
+ * gated). The job's outcome arrives via the polling effect — this only
+ * switches the dialog into its running state.
+ */
+async function startPublishFromForm(
   values: PublishFormValues,
   runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
   setBusy: (v: boolean) => void,
   setError: (msg: string | null) => void,
   setHasToken: (v: boolean) => void,
-  onClose: () => void,
+  setJob: (job: GithubPublishJob | null) => void,
 ): Promise<void> {
   const repoUrl = values.repoUrl.trim()
   if (!repoUrl) {
@@ -167,33 +184,29 @@ async function runGithubPublish(
 
   setBusy(true)
   setError(null)
+  setJob(null)
   try {
     const saved = await putGithubPublishSettings(body)
     setHasToken(saved.hasToken)
 
-    const result = await runStepUp(() =>
-      publishToGithub({
+    await runStepUp(() =>
+      startGithubPublish({
         branch,
         targetDir,
         basePath,
         ...(commitMessage ? { commitMessage } : {}),
       }),
     )
-
-    toastPublishSuccess(result, saved.owner, saved.repo)
-    onClose()
+    // Job accepted (202). The polling effect now drives progress + outcome.
   } catch (err) {
-    if (err instanceof Error && err.message === StepUpCancelledMessage) return
+    if (err instanceof Error && err.message === StepUpCancelledMessage) {
+      setBusy(false)
+      return
+    }
     console.error('[GithubPublishDialog]', err)
     const message = getErrorMessage(err, 'GitHub publish failed')
     setError(message)
-    pushToast({
-      kind: 'error',
-      title: 'GitHub publish failed',
-      body: message,
-      location: 'site-editor',
-    })
-  } finally {
+    toastPublishFailure(message)
     setBusy(false)
   }
 }
@@ -210,7 +223,7 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [progress, setProgress] = useState<GithubPublishProgress | null>(null)
+  const [job, setJob] = useState<GithubPublishJob | null>(null)
 
   const [repoUrl, setRepoUrl] = useState('')
   const [branch, setBranch] = useState(DEFAULT_BRANCH)
@@ -244,45 +257,89 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
       },
     )
 
+    // Adopt an already-running job (another editor started it, or this dialog
+    // was reopened mid-run) so the dialog shows its progress and outcome too.
+    void getGithubPublishJob()
+      .then((res) => {
+        if (!cancelled && res.job?.state === 'running') setBusy(true)
+      })
+      .catch((_err) => {
+        // Best-effort adoption; a failure here never blocks a new publish.
+      })
+
     return () => {
       cancelled = true
     }
   }, [open])
 
-  // Poll the publish progress endpoint while the publish POST is in flight,
-  // so long uploads show "still moving" feedback instead of a dead spinner.
+  // Poll the job endpoint while a publish is running; settle on the outcome.
   useEffect(() => {
     if (!busy) return
     let cancelled = false
+    let settled = false
+
+    const settle = (finalize: () => void) => {
+      if (settled || cancelled) return
+      settled = true
+      clearInterval(interval)
+      finalize()
+    }
 
     const poll = () => {
-      void getGithubPublishProgress()
+      void getGithubPublishJob()
         .then((res) => {
-          if (!cancelled) setProgress(res.progress)
+          if (cancelled) return
+          const current = res.job
+          // A vanished job means the server restarted mid-run (in-memory
+          // registry) — surface it as an interruption, not a hang.
+          if (current === null) {
+            settle(() => {
+              setBusy(false)
+              setError('The publish job was interrupted — the server restarted while it was running.')
+              toastPublishFailure('Publish interrupted (server restarted)')
+            })
+            return
+          }
+          setJob(current)
+          if (current.state === 'succeeded' && current.result) {
+            const result = current.result
+            settle(() => {
+              setBusy(false)
+              toastPublishSuccess(result)
+              onClose()
+            })
+          } else if (current.state === 'failed') {
+            settle(() => {
+              const message = current.failure?.message ?? 'GitHub publish failed'
+              setBusy(false)
+              setError(message)
+              toastPublishFailure(message)
+            })
+          }
         })
         .catch((_err) => {
-          // Best-effort telemetry; the publish POST itself reports failures.
+          // Transient poll failures keep polling; only a settled job or an
+          // interruption ends the loop.
         })
     }
-    poll()
-    const interval = setInterval(poll, 1000)
 
+    const interval = setInterval(poll, JOB_POLL_INTERVAL_MS)
+    poll()
     return () => {
       cancelled = true
       clearInterval(interval)
     }
-  }, [busy])
+  }, [busy, onClose])
 
   async function handlePublish() {
-    await runGithubPublish(
+    await startPublishFromForm(
       { repoUrl, branch, targetDir, basePath, commitMessage, token, hasToken, clearToken },
       runStepUp,
       setBusy,
       setError,
       setHasToken,
-      onClose,
+      setJob,
     )
-    setProgress(null)
   }
 
   function handleClearToken() {
@@ -481,9 +538,9 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
           />
         </div>
 
-        {busy && progress && progressLabel(progress) && (
+        {busy && job && jobLabel(job) && (
           <p role="status" className={styles.progress}>
-            {progressLabel(progress)}
+            {jobLabel(job)}
           </p>
         )}
         {error && (

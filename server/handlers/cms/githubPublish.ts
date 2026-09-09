@@ -1,30 +1,26 @@
 /**
- * GitHub publish settings + push endpoints.
+ * GitHub publish settings + job endpoints.
  *
  *   GET  /admin/api/cms/github-publish/settings — wire-safe settings view
  *   PUT  /admin/api/cms/github-publish/settings — upsert repo / branch / token
- *   GET  /admin/api/cms/github-publish/progress — in-flight publish progress
- *   POST /admin/api/cms/publish-github          — export + Git Data API push
+ *   GET  /admin/api/cms/github-publish/progress — job view (live or settled)
+ *   POST /admin/api/cms/publish-github          — start the export + push job
  *
  * Settings mutations require `pages.publish` only (no step-up) — same blast
  * radius as rotating other stored credentials. The publish action itself is
  * step-up gated like local publish / static export.
+ *
+ * The publish POST starts a background job and returns 202 immediately:
+ * a full-site Git Data API push runs minutes, longer than reverse-proxy
+ * response timeouts (Cloudflare cuts at ~100 s). Outcomes — success result
+ * or failure — surface on the progress endpoint, which the admin UI polls.
  */
 import { Type } from '@core/utils/typeboxHelpers'
-import { StaticExportError } from '@core/static-export/buildExportTree'
 import type { DbClient } from '../../db/client'
 import { requireCapability, requireStepUp } from '../../auth/authz'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
-import {
-  GithubPublishError,
-  publishSiteToGithub,
-} from '../../publish/githubPublish'
-import {
-  beginGithubPublishProgress,
-  endGithubPublishProgress,
-  getGithubPublishProgress,
-  updateGithubPublishProgress,
-} from '../../publish/githubPublishProgress'
+import { startGithubPublishJob } from '../../publish/githubPublishJob'
+import { getGithubPublishJob } from '../../publish/githubPublishJobRegistry'
 import {
   getGithubPublishSettingsView,
   GithubPublishSettingsError,
@@ -91,7 +87,7 @@ export async function handleGithubPublishRoutes(
     const user = await requireCapability(req, db, 'pages.publish')
     if (user instanceof Response) return user
 
-    return jsonResponse({ progress: getGithubPublishProgress() })
+    return jsonResponse({ job: getGithubPublishJob() })
   }
 
   if (url.pathname === PUBLISH_PATH) {
@@ -109,48 +105,18 @@ export async function handleGithubPublishRoutes(
     const body = await readValidatedBody(req, PublishGithubSchema)
     if (!body) return badRequest('Invalid GitHub publish request body')
 
-    beginGithubPublishProgress()
-    try {
-      const result = await publishSiteToGithub({
-        db,
-        uploadsDir: options.uploadsDir,
-        branch: body.branch,
-        targetDir: body.targetDir,
-        basePath: body.basePath,
-        commitMessage: body.commitMessage?.trim() || undefined,
-        onPushProgress: updateGithubPublishProgress,
-      })
-      return jsonResponse(result)
-    } catch (err) {
-      if (err instanceof StaticExportError) {
-        if (err.code === 'not-published') {
-          return jsonResponse({ error: 'Site has not been published yet.' }, { status: 409 })
-        }
-        if (err.code === 'per-visitor-hole') {
-          return jsonResponse({ error: err.message, report: err.report }, { status: 422 })
-        }
-      }
-      if (err instanceof GithubPublishError) {
-        if (err.code === 'token-missing' || err.code === 'config-incomplete') {
-          return jsonResponse({ error: err.message }, { status: 400 })
-        }
-        if (err.code === 'push-failed') {
-          // Keep exportDir on the server error for ops; never echo absolute
-          // disk paths to the client response body.
-          console.error('[github-publish]', err)
-          return jsonResponse(
-            {
-              error:
-                'GitHub push failed. The export directory was kept on the server for retry or inspection.',
-            },
-            { status: 502 },
-          )
-        }
-      }
-      throw err
-    } finally {
-      endGithubPublishProgress()
+    const started = startGithubPublishJob({
+      db,
+      uploadsDir: options.uploadsDir,
+      branch: body.branch,
+      targetDir: body.targetDir,
+      basePath: body.basePath,
+      commitMessage: body.commitMessage?.trim() || undefined,
+    })
+    if (!started) {
+      return jsonResponse({ error: 'A GitHub publish is already in progress.' }, { status: 409 })
     }
+    return jsonResponse({ started: true }, { status: 202 })
   }
 
   return null

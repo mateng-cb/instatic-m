@@ -428,25 +428,52 @@ export const PublishGithubResultSchema = Type.Object({
 
 export type PublishGithubResult = Static<typeof PublishGithubResultSchema>
 
-export const GithubPublishProgressSchema = Type.Object({
-  running: Type.Boolean(),
+export const GithubPublishJobFailureSchema = Type.Object({
+  code: Type.Union([
+    Type.Literal('not-published'),
+    Type.Literal('per-visitor-hole'),
+    Type.Literal('token-missing'),
+    Type.Literal('config-incomplete'),
+    Type.Literal('push-failed'),
+    Type.Literal('internal'),
+  ]),
+  message: Type.String(),
+  report: Type.Optional(Type.Array(ExportReportItemSchema)),
+})
+
+export type GithubPublishJobFailure = Static<typeof GithubPublishJobFailureSchema>
+
+export const GithubPublishJobSchema = Type.Object({
+  state: Type.Union([
+    Type.Literal('running'),
+    Type.Literal('succeeded'),
+    Type.Literal('failed'),
+  ]),
   phase: Type.Union([
     Type.Literal('exporting'),
     Type.Literal('uploading'),
     Type.Literal('finalizing'),
-    Type.Literal('done'),
   ]),
   total: Type.Integer(),
   uploaded: Type.Integer(),
   currentPath: Type.String(),
   startedAt: Type.Integer(),
   updatedAt: Type.Integer(),
+  endedAt: Type.Optional(Type.Integer()),
+  result: Type.Optional(PublishGithubResultSchema),
+  failure: Type.Optional(GithubPublishJobFailureSchema),
 })
 
-export type GithubPublishProgress = Static<typeof GithubPublishProgressSchema>
+export type GithubPublishJob = Static<typeof GithubPublishJobSchema>
 
-export const GithubPublishProgressResponseSchema = Type.Object({
-  progress: Type.Union([GithubPublishProgressSchema, Type.Null()]),
+export const GithubPublishJobResponseSchema = Type.Object({
+  job: Type.Union([GithubPublishJobSchema, Type.Null()]),
 })
 
-export type GithubPublishProgressResponse = Static<typeof GithubPublishProgressResponseSchema>
+export type GithubPublishJobResponse = Static<typeof GithubPublishJobResponseSchema>
+
+export const StartGithubPublishResponseSchema = Type.Object({
+  started: Type.Boolean(),
+})
+
+export type StartGithubPublishResponse = Static<typeof StartGithubPublishResponseSchema>

@@ -1,11 +1,15 @@
 /**
- * Integration tests — GitHub publish settings + POST /publish-github auth/shape.
+ * Integration tests — GitHub publish settings + the background publish job
+ * (start endpoint semantics + job endpoint outcome polling).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { DbClient } from '../../../server/db'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { handleGithubPublishRoutes } from '../../../server/handlers/cms/githubPublish'
-import { resetGithubPublishProgress } from '../../../server/publish/githubPublishProgress'
+import {
+  resetGithubPublishJob,
+  tryBeginGithubPublishJob,
+} from '../../../server/publish/githubPublishJobRegistry'
 import { SESSION_COOKIE_NAME } from '../../../server/auth/tokens'
 import { stampSocketIp } from '../../../server/auth/security'
 import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
@@ -103,6 +107,23 @@ function progressRequest(cookie?: string): Request {
   return req
 }
 
+interface JobView {
+  state: 'running' | 'succeeded' | 'failed'
+  failure?: { code: string; message: string }
+}
+
+/** Poll the job endpoint until the job settles (background job, best-effort timing). */
+async function waitForSettledJob(db: DbClient, cookie: string): Promise<JobView> {
+  const deadline = Date.now() + 5000
+  for (;;) {
+    const res = await handleGithubPublishRoutes(progressRequest(cookie), db)
+    const body = await res!.json() as { job: JobView | null }
+    if (body.job && body.job.state !== 'running') return body.job
+    if (Date.now() > deadline) throw new Error('GitHub publish job did not settle within 5s')
+    await Bun.sleep(25)
+  }
+}
+
 describe('GitHub publish HTTP handlers', () => {
   let originalSecretKey: string | undefined
 
@@ -110,7 +131,7 @@ describe('GitHub publish HTTP handlers', () => {
     originalSecretKey = process.env.INSTATIC_SECRET_KEY
     process.env.INSTATIC_SECRET_KEY = TEST_MASTER_KEY
     __resetMasterKeyCacheForTesting()
-    resetGithubPublishProgress()
+    resetGithubPublishJob()
   })
 
   afterEach(() => {
@@ -217,13 +238,13 @@ describe('GitHub publish HTTP handlers', () => {
     }
   })
 
-  it('POST publish-github returns 400 when token is missing after step-up', async () => {
+  it('POST publish-github answers 202 and surfaces a missing token as a failed job', async () => {
     const { db, cleanup } = await createTestDb()
     try {
       await setup(db)
       const cookie = await completeStepUp(db, await login(db))
 
-      // Persist repo without a token so the orchestrator fails on token-missing.
+      // Persist repo without a token so the background job fails on token-missing.
       const putRes = await handleGithubPublishRoutes(
         settingsRequest('PUT', cookie, {
           repoUrl: TEST_REPO,
@@ -240,15 +261,41 @@ describe('GitHub publish HTTP handlers', () => {
         db,
         { uploadsDir: '/tmp/unused' },
       )
-      expect(res?.status).toBe(400)
-      const body = await res!.json() as { error: string }
-      expect(body.error).toMatch(/token/i)
+      expect(res?.status).toBe(202)
+      expect(await res!.json()).toEqual({ started: true })
+
+      const job = await waitForSettledJob(db, cookie)
+      expect(job.state).toBe('failed')
+      expect(job.failure?.code).toBe('token-missing')
+      expect(job.failure?.message).toMatch(/token/i)
     } finally {
       await safeCleanup(cleanup)
     }
   })
 
-  it('GET progress requires auth, mirrors the registry, and ends after a failed publish', async () => {
+  it('POST publish-github answers 409 while a job is already running', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+      const cookie = await completeStepUp(db, await login(db))
+
+      // Claim the single job slot the way a real in-flight publish would.
+      expect(tryBeginGithubPublishJob()).toBe(true)
+
+      const res = await handleGithubPublishRoutes(
+        publishGithubRequest(cookie),
+        db,
+        { uploadsDir: '/tmp/unused' },
+      )
+      expect(res?.status).toBe(409)
+      const body = await res!.json() as { error: string }
+      expect(body.error).toMatch(/already in progress/i)
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
+
+  it('GET progress requires auth and mirrors the registry', async () => {
     const { db, cleanup } = await createTestDb()
     try {
       await setup(db)
@@ -259,23 +306,7 @@ describe('GitHub publish HTTP handlers', () => {
       const cookie = await login(db)
       const empty = await handleGithubPublishRoutes(progressRequest(cookie), db)
       expect(empty?.status).toBe(200)
-      expect(await empty!.json()).toEqual({ progress: null })
-
-      // A failed publish (token-missing, 400) still closes the progress slot.
-      const stepUpCookie = await completeStepUp(db, cookie)
-      const publish = await handleGithubPublishRoutes(
-        publishGithubRequest(stepUpCookie),
-        db,
-        { uploadsDir: '/tmp/unused' },
-      )
-      expect(publish?.status).toBe(400)
-
-      // Step-up rotates the session token (revokes the old row), so the
-      // pre-step-up login cookie is dead — query progress with the new one.
-      const after = await handleGithubPublishRoutes(progressRequest(stepUpCookie), db)
-      expect(after?.status).toBe(200)
-      const afterBody = await after!.json() as { progress: { running: boolean; phase: string } }
-      expect(afterBody.progress).toMatchObject({ running: false, phase: 'done' })
+      expect(await empty!.json()).toEqual({ job: null })
     } finally {
       await safeCleanup(cleanup)
     }
