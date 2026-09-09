@@ -12,6 +12,8 @@ export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from 
 
 export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 
+export { findDynamicNodesWithReasons } from './dynamicDetection'
+
 export type {
   RenderConfig,
   RenderAccumulators,

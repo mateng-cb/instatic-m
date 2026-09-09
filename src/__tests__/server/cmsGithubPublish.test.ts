@@ -270,7 +270,9 @@ describe('GitHub publish HTTP handlers', () => {
       )
       expect(publish?.status).toBe(400)
 
-      const after = await handleGithubPublishRoutes(progressRequest(cookie), db)
+      // Step-up rotates the session token (revokes the old row), so the
+      // pre-step-up login cookie is dead — query progress with the new one.
+      const after = await handleGithubPublishRoutes(progressRequest(stepUpCookie), db)
       expect(after?.status).toBe(200)
       const afterBody = await after!.json() as { progress: { running: boolean; phase: string } }
       expect(afterBody.progress).toMatchObject({ running: false, phase: 'done' })
