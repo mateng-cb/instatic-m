@@ -56,7 +56,7 @@ describe('self-host docker config', () => {
   it('defines a production compose stack with health checks and persistent data', () => {
     const compose = readFileSync('compose.prod.yml', 'utf8')
 
-    expect(compose).toContain('instatic-m:local')
+    expect(compose).toContain('instatic-dite:local')
     expect(compose).toContain('build:')
     expect(compose).toContain('dockerfile: Dockerfile')
     expect(compose).toContain('restart: unless-stopped')

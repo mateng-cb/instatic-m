@@ -147,8 +147,8 @@ What comes out the other end is plain HTML and compact CSS, all the way down. No
 You need [Bun](https://bun.sh). Nothing else. The default dev setup runs on SQLite, so there are no extra services to stand up.
 
 ```sh
-git clone https://github.com/mateng-cb/instatic-m.git
-cd instatic-m
+git clone http://192.168.3.106:8881/instatic/instatic-dite.git
+cd instatic-dite
 bun install
 bun run dev
 ```
@@ -163,7 +163,7 @@ Want to see it the way it actually ships? `bun run start` builds the admin and s
 
 ## About this repository
 
-**Instatic-M** is a private secondary-development fork of [CoreBunch/Instatic](https://github.com/CoreBunch/Instatic), the self-hosted CMS built by the team behind [Motion.page](https://motion.page) and [Core Framework](https://coreframework.com). Huge thanks to them for open-sourcing the original.
+**Instatic-Dite** is a private secondary-development fork of [CoreBunch/Instatic](https://github.com/CoreBunch/Instatic), the self-hosted CMS built by the team behind [Motion.page](https://motion.page) and [Core Framework](https://coreframework.com). Huge thanks to them for open-sourcing the original.
 
 This fork carries its own development line (static site export, GitHub Pages publishing) and is **not** affiliated with the upstream project. Version 1.0.0 is the fork baseline: everything below that number is upstream history, preserved under the same MIT license.
 

@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${INSTATIC_IMAGE:-instatic-m:local}
+    image: ${INSTATIC_IMAGE:-instatic-dite:local}
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-3001}:3001"

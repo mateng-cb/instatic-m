@@ -1,6 +1,6 @@
 # Security Policy
 
-Instatic-M is a self-hosted fork and not recommended for hostile multi-user environments without careful operator review. Security reports are still taken seriously.
+Instatic-Dite is a self-hosted fork and not recommended for hostile multi-user environments without careful operator review. Security reports are still taken seriously.
 
 ## Supported Versions
 
@@ -8,13 +8,13 @@ Security fixes target the latest `main` branch and the latest tagged release.
 
 ## Reporting A Vulnerability
 
-Use GitHub's private vulnerability reporting for this repository:
+Open a private, confidential issue on the self-hosted GitLab instance:
 
 ```txt
-https://github.com/mateng-cb/instatic-m/security/advisories/new
+http://192.168.3.106:8881/instatic/instatic-dite/-/issues/new
 ```
 
-If private vulnerability reporting is unavailable, open a minimal public issue asking for a private reporting channel. Do not include exploit details, secret material, vulnerable URLs, or proof-of-concept payloads in that public issue.
+Mark the issue as confidential so only maintainers can see it. Do not include exploit details, secret material, vulnerable URLs, or proof-of-concept payloads in that public issue.
 
 Helpful reports include:
 

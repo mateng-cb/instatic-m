@@ -340,3 +340,17 @@ The bar is: **your work is clean.**
 6. Published output stays clean: clean HTML, clean CSS, clean TypeScript. No exceptions.
 7. Documentation tracks code — update [`docs/`](docs/) in the same change. Read [`docs/README.md`](docs/README.md) for orientation.
 8. Verify once at the end. Pre-existing failures from parallel sessions are not yours to fix.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitLab issues on the self-hosted instance (`instatic/instatic-dite`), managed with the `glab` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (labels equal their names: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` at the repo root + `docs/adr/`. See `docs/agents/domain.md`.
