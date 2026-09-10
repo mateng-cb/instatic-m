@@ -14,10 +14,10 @@ All agent work happens in a git worktree under `.worktrees/` at the repo root (g
 
 When publishing work:
 
-- Start from an up-to-date `main`, then create a worktree: `git worktree add .worktrees/<short-name> -b <branch>`. Never work directly in the primary checkout when a task will change files.
+- Start from an up-to-date `main`, then create a worktree with `scripts/worktree-new <type>/<short-kebab-description>` (fetches `origin/main` and runs `git worktree add .worktrees/<short-name> -b <branch>`). Never work directly in the primary checkout when a task will change files.
 - Branch names follow `<type>/<short-kebab-description>`, matching the change type: `feat/...`, `fix/...`, `refactor/...`, `chore/...`, `docs/...`, or `test/...`. Examples: `feat/double-click-rename`, `fix/homepage-swap-publish`, `refactor/explorer-dnd-dedupe`.
 - Do **not** use agent-branded branch prefixes such as `codex/...`, `claude/...`, or similar.
-- Verify (`bun run build`, `bun test`, `bun run lint` as applicable) in the worktree, then merge into `main` and push: `git switch main && git merge --no-ff <branch> && git push`.
+- Verify (`bun run build`, `bun test`, `bun run lint` as applicable) in the worktree, then merge into `main` and push with `scripts/worktree-finish <short-name>` (wraps `git merge --no-ff` + `git push`; pass `--clean` to also remove the worktree and branch).
 - Keep change scope coherent. Do not mix unrelated cleanup or follow-up fixes into a change just because the branch is currently checked out.
 - Before staging, inspect `git status -sb` and the diff. Stage only files that belong to the change. Never stage unrelated user or parallel-agent changes — other sessions may have their own worktrees under `.worktrees/`.
 - **Do not delete a worktree or its branch on your own after merging** — keep it until the user explicitly confirms the work is accepted, then remove it with `git worktree remove .worktrees/<short-name>` and `git branch -d <branch>`.
