@@ -1,7 +1,11 @@
-import { apiBlobRequest, apiRequest, type FetchLike } from '@core/http'
+import { apiRequest, type FetchLike } from '@core/http'
 import {
+  GithubPublishJobResponseSchema,
   GithubPublishSettingsViewSchema,
+  StartGithubPublishResponseSchema,
+  type GithubPublishJobResponse,
   type GithubPublishSettingsView,
+  type StartGithubPublishResponse,
 } from './responseSchemas'
 
 export async function getGithubPublishSettings(
@@ -19,7 +23,10 @@ export async function putGithubPublishSettings(
   body: {
     repoUrl: string
     branch: string
+    targetDir: string
     basePath: string
+    /** omit = keep existing; '' = clear back to the server default */
+    workdir?: string
     token?: string
   },
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
@@ -34,20 +41,32 @@ export async function putGithubPublishSettings(
   })
 }
 
-/**
- * Download the local push kit ZIP: the basePath-rewritten static export plus
- * push scripts that publish it to GitHub from the operator's machine. The
- * caller saves the Blob to disk.
- */
-export async function downloadGithubPushKit(
-  options: { embedToken: boolean },
+export async function getGithubPublishJob(
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
-): Promise<Blob> {
-  return apiBlobRequest(`${basePath}/github-publish/push-package`, {
-    method: 'POST',
-    body: options,
+): Promise<GithubPublishJobResponse> {
+  return apiRequest(`${basePath}/github-publish/progress`, {
+    schema: GithubPublishJobResponseSchema,
     fetchImpl,
-    fallbackMessage: 'Push kit download failed',
+    fallbackMessage: 'GitHub publish progress request failed',
+  })
+}
+
+export async function startGithubPublish(
+  body: {
+    branch?: string
+    targetDir?: string
+    basePath?: string
+    commitMessage?: string
+  } = {},
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  basePath = '/admin/api/cms',
+): Promise<StartGithubPublishResponse> {
+  return apiRequest(`${basePath}/publish-github`, {
+    method: 'POST',
+    body,
+    schema: StartGithubPublishResponseSchema,
+    fetchImpl,
+    fallbackMessage: 'Starting GitHub publish failed',
   })
 }

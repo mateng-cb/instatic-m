@@ -387,7 +387,8 @@ export const CmsPluginScheduleRunOutcomeEnvelopeSchema = Type.Object(
 )
 
 // ---------------------------------------------------------------------------
-// cmsGithubPublish.ts — wire shapes mirror server/repositories/githubPublishSettings.
+// cmsGithubPublish.ts — wire shapes mirror server/repositories/githubPublishSettings
+// and server/publish/githubPublish (PublishSiteToGithubResult).
 // ---------------------------------------------------------------------------
 
 export const ExportReportItemSchema = Type.Object({
@@ -409,10 +410,75 @@ export const GithubPublishSettingsViewSchema = Type.Object({
   owner: Type.String(),
   repo: Type.String(),
   branch: Type.String(),
+  targetDir: Type.String(),
   basePath: Type.String(),
+  /** Server-side persistent git working clone; '' = server default. */
+  workdir: Type.String(),
   hasToken: Type.Boolean(),
   keyFingerprintCurrent: Type.Boolean(),
   updatedAt: Type.Union([Type.String(), Type.Null()]),
 })
 
 export type GithubPublishSettingsView = Static<typeof GithubPublishSettingsViewSchema>
+
+export const PublishGithubResultSchema = Type.Object({
+  commitSha: Type.String(),
+  repoUrl: Type.String(),
+  branch: Type.String(),
+  report: Type.Array(ExportReportItemSchema),
+})
+
+export type PublishGithubResult = Static<typeof PublishGithubResultSchema>
+
+export const GithubPublishJobFailureSchema = Type.Object({
+  code: Type.Union([
+    Type.Literal('not-published'),
+    Type.Literal('per-visitor-hole'),
+    Type.Literal('token-missing'),
+    Type.Literal('config-incomplete'),
+    Type.Literal('push-failed'),
+    Type.Literal('internal'),
+  ]),
+  message: Type.String(),
+  report: Type.Optional(Type.Array(ExportReportItemSchema)),
+})
+
+export type GithubPublishJobFailure = Static<typeof GithubPublishJobFailureSchema>
+
+export const GithubPublishJobSchema = Type.Object({
+  state: Type.Union([
+    Type.Literal('running'),
+    Type.Literal('succeeded'),
+    Type.Literal('failed'),
+  ]),
+  phase: Type.Union([
+    Type.Literal('exporting'),
+    Type.Literal('uploading'),
+    Type.Literal('finalizing'),
+  ]),
+  total: Type.Integer(),
+  uploaded: Type.Integer(),
+  currentPath: Type.String(),
+  startedAt: Type.Integer(),
+  updatedAt: Type.Integer(),
+  endedAt: Type.Optional(Type.Integer()),
+  result: Type.Optional(PublishGithubResultSchema),
+  failure: Type.Optional(GithubPublishJobFailureSchema),
+})
+
+export type GithubPublishJob = Static<typeof GithubPublishJobSchema>
+
+export const GithubPublishJobResponseSchema = Type.Object({
+  job: Type.Union([GithubPublishJobSchema, Type.Null()]),
+})
+
+export type GithubPublishJobResponse = Static<typeof GithubPublishJobResponseSchema>
+
+export const StartGithubPublishResponseSchema = Type.Object({
+  started: Type.Boolean(),
+  /** epoch ms — identity of the freshly claimed job slot; the poller only
+   * settles on a job whose startedAt matches, ignoring prior settled runs. */
+  startedAt: Type.Number(),
+})
+
+export type StartGithubPublishResponse = Static<typeof StartGithubPublishResponseSchema>

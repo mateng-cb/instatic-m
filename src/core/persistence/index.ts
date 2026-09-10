@@ -6,10 +6,12 @@ export {
   validateCmsRuntimeScripts,
 } from './cmsRuntime'
 export {
-  downloadGithubPushKit,
+  getGithubPublishJob,
   getGithubPublishSettings,
   putGithubPublishSettings,
+  startGithubPublish,
 } from './cmsGithubPublish'
+export type { GithubPublishJob } from './responseSchemas'
 export { downloadStaticExport } from './cmsStaticExport'
 export type { CmsRuntimePreviewResult } from './cmsRuntime'
 export { listCmsMediaAssets } from './cmsMedia'

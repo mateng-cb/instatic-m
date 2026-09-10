@@ -45,7 +45,13 @@ COPY --chown=bun:bun tsconfig*.json ./
 COPY --chown=bun:bun server ./server
 COPY --chown=bun:bun src ./src
 
-RUN mkdir -p /app/uploads /app/data && chown -R bun:bun /app
+# GitHub publish pushes via the real git CLI (server/github/gitCliPush.ts);
+# the oven/bun base image ships without it.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app/uploads /app/data /app/github-publish-workdir && chown -R bun:bun /app
 
 USER bun
 EXPOSE 3001
