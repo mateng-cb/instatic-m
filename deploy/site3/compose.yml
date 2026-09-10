@@ -23,6 +23,12 @@ services:
       STATIC_DIR: /app/dist
       UPLOADS_DIR: /app/uploads
       DATABASE_URL: sqlite:/app/data/cms.db
+      # These must reach the CONTAINER: compose only interpolates .env into this
+      # file, it does not export .env into the container environment. Missing
+      # PUBLIC_ORIGIN here makes the CSRF origin check reject admin logins (403).
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:-}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads
