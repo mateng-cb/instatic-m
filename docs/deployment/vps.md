@@ -28,8 +28,8 @@ Install Docker Engine and Docker Compose on the VPS. If using TLS, point a domai
 Use a source checkout:
 
 ```sh
-git clone https://github.com/mateng-cb/instatic-m.git
-cd instatic-m
+git clone http://192.168.3.106:8881/instatic/instatic-dite.git
+cd instatic-dite
 ```
 
 Compose builds the image from the checkout — `compose.prod.yml` carries the build context, and the optional overlays only add SQLite persistence or the Caddy TLS proxy.

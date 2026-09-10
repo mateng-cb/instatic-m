@@ -37,21 +37,21 @@ export function getHelpCommands(): Command[] {
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
-        window.open('https://github.com/mateng-cb/instatic-m/blob/main/docs/', '_blank', 'noopener,noreferrer')
+        window.open('http://192.168.3.106:8881/instatic/instatic-dite/-/blob/main/docs/', '_blank', 'noopener,noreferrer')
       },
     },
 
     {
       id: 'help.reportIssue',
       title: 'Report an issue',
-      subtitle: 'Open GitHub Issues to report a bug or request a feature',
+      subtitle: 'Open a GitLab issue to report a bug or request a feature',
       group: 'help',
       iconName: 'circle-alert-solid',
-      keywords: ['report', 'issue', 'bug', 'feedback', 'github'],
+      keywords: ['report', 'issue', 'bug', 'feedback', 'gitlab'],
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
-        window.open('https://github.com/mateng-cb/instatic-m/issues/new', '_blank', 'noopener,noreferrer')
+        window.open('http://192.168.3.106:8881/instatic/instatic-dite/-/issues/new', '_blank', 'noopener,noreferrer')
       },
     },
 
@@ -66,7 +66,7 @@ export function getHelpCommands(): Command[] {
       run: (ctx) => {
         ctx.closeSpotlight()
         // Navigate to About section in settings when available, else open docs
-        window.open('https://github.com/mateng-cb/instatic-m', '_blank', 'noopener,noreferrer')
+        window.open('http://192.168.3.106:8881/instatic/instatic-dite', '_blank', 'noopener,noreferrer')
       },
     },
 
