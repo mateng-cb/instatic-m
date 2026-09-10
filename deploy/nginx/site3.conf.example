@@ -1,0 +1,22 @@
+# site3-cms.conf.example — Nginx vhost template for a future third CMS admin.
+#
+# This origin serves the CMS ADMIN ONLY (<site> public site is on Cloudflare
+# Pages). Copy to /etc/nginx/conf.d/<site>-cms.conf, set server_name and the
+# upstream port (site3 = 127.0.0.1:3003), then reload nginx.
+
+server {
+	listen 80;
+	server_name site3-cms.idcnova.com; # TODO replace with the real CMS domain
+
+	location / {
+		proxy_pass http://127.0.0.1:3003;
+		proxy_http_version 1.1;
+		proxy_set_header Host $host;
+		proxy_set_header X-Forwarded-Proto http;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header Upgrade $http_upgrade;
+		proxy_set_header Connection "upgrade";
+		proxy_read_timeout 300s;
+		client_max_body_size 256m;
+	}
+}

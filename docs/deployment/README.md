@@ -13,6 +13,8 @@ Instatic is one Bun server packaged by the root `Dockerfile`. The server reads r
 | VPS Docker Compose | Self-hosted server, full control | SQLite or bundled Postgres | Docker named volumes | [vps.md](vps.md) |
 | Generic Docker host | Any platform that runs the Dockerfile/image | SQLite or external Postgres | A mounted directory/volume for DB/uploads | [docker-image.md](docker-image.md) |
 | VPS HTTPS | Public domain on a VPS | Unchanged | Caddy cert volume plus app volumes | [tls-caddy.md](tls-caddy.md) |
+| Multi-site VPS | Several independent sites, one server, shared image | SQLite per site | Per-site data + uploads directories (one Compose project per site) | [multi-site.md](multi-site.md) |
+| Local multi-site dev | Developing several sites on one machine before launch | SQLite per site (`.sites/<site>/`) | Per-site local workspace directories | [local-workspaces.md](local-workspaces.md) |
 | GitHub Pages | Static export to a GitHub branch (no Bun on Pages) | N/A (export is read from published slot) | PAT encrypted in DB; requires `INSTATIC_SECRET_KEY` | [github-pages.md](github-pages.md) |
 
 Back up both the database and uploaded media. See [backup-restore.md](backup-restore.md).
@@ -85,6 +87,8 @@ SQLite installs also need the SQLite database file on persistent storage. On pla
 | [vps.md](vps.md) | Docker Compose on a VPS, both SQLite and Postgres |
 | [docker-image.md](docker-image.md) | Generic Docker image contract and `docker run` examples |
 | [tls-caddy.md](tls-caddy.md) | Caddy TLS overlay for VPS Compose installs |
+| [multi-site.md](multi-site.md) | Multi-site: one Instatic instance per site behind host Nginx |
+| [local-workspaces.md](local-workspaces.md) | Local multi-site development: per-site dev workspaces, launch upload, snapshot pull |
 | [backup-restore.md](backup-restore.md) | Database and uploads backup/restore |
 | [github-pages.md](github-pages.md) | GitHub Pages static publish (PAT, branch, `basePath`) |
 

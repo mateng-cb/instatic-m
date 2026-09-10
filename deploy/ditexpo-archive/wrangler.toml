@@ -1,0 +1,11 @@
+name = "ditexpo-archive"
+main = "worker.ts"
+compatibility_date = "2025-01-01"
+
+# 部署后在 Cloudflare 面板（或 `wrangler triggers`）把 Worker 绑定到路由:
+#   ditexpo.com/*
+# 一次绑定，之后每年轮换只改 ROUTES 表，路由不动。
+
+routes = [
+	{ pattern = "ditexpo.com/*", zone_name = "ditexpo.com" },
+]

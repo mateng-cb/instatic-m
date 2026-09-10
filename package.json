@@ -23,6 +23,7 @@
     "dev:vite": "bun run scripts/vite.ts",
     "e2e:dev": "bun run scripts/e2e-dev.ts",
     "db:drop": "bun run scripts/db-drop.ts",
+    "release": "bun run deploy/release-image.ts",
     "start": "bun run scripts/start.ts",
     "docker:up": "docker compose -f compose.prod.yml -f compose.build.yml up --build",
     "build": "tsc -b && bun run scripts/vite.ts build",
