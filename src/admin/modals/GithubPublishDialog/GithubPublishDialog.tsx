@@ -316,8 +316,17 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
         .then((res) => {
           if (cancelled) return
           const current = res.job
-          // A vanished job means the server restarted mid-run (in-memory
-          // registry) — surface it as an interruption, not a hang.
+          // While our own POST is still in flight (myStartedAt === null) NO
+          // view can settle this dialog: { job: null } is just an empty
+          // registry (fresh server, POST not yet arrived), and a settled view
+          // is the PREVIOUS run's leftover. Show running progress only.
+          if (myStartedAt === null) {
+            if (current?.state === 'running') setJob(current)
+            return
+          }
+          // We held a job identity and it vanished — the in-memory registry
+          // was lost to a server restart mid-run. Surface it as an
+          // interruption, not a hang.
           if (current === null) {
             settle(() => {
               setBusy(false)
@@ -327,12 +336,11 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
             })
             return
           }
-          // Only OUR job settles this dialog. A settled view with a different
-          // startedAt is the previous run's leftover (ours hasn't claimed the
-          // slot yet — e.g. the POST is still behind step-up); a running view
-          // with a different startedAt is someone else's job. Show progress
-          // for the latter, never settle on either.
-          if (myStartedAt !== null && current.startedAt !== myStartedAt) {
+          // Only OUR job settles this dialog. A view with a different
+          // startedAt is not ours: a settled one is the previous run's
+          // leftover, a running one is someone else's job. Show progress for
+          // the latter, never settle on either.
+          if (current.startedAt !== myStartedAt) {
             if (current.state === 'running') setJob(current)
             return
           }
