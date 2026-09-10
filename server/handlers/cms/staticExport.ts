@@ -101,7 +101,7 @@ export async function handleStaticExportRoutes(
 }
 
 /** Pipe a stream and run cleanup once it closes, errors, or is cancelled. */
-function withDeferredCleanup(
+export function withDeferredCleanup(
   stream: ReadableStream<Uint8Array>,
   cleanup: () => Promise<void>,
 ): ReadableStream<Uint8Array> {

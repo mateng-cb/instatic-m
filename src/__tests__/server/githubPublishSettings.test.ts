@@ -51,7 +51,6 @@ describe('github publish settings repository', () => {
       owner: '',
       repo: '',
       branch: 'gh-pages',
-      targetDir: '',
       basePath: '',
       hasToken: false,
       keyFingerprintCurrent: true,
@@ -63,7 +62,6 @@ describe('github publish settings repository', () => {
     const view = await upsertGithubPublishSettings(testDb.db, {
       repoUrl: TEST_REPO,
       branch: 'gh-pages',
-      targetDir: 'docs',
       basePath: '/my-site',
       token: TEST_TOKEN,
     })
@@ -75,7 +73,6 @@ describe('github publish settings repository', () => {
     expect(view.owner).toBe('acme')
     expect(view.repo).toBe('my-site')
     expect(view.branch).toBe('gh-pages')
-    expect(view.targetDir).toBe('docs')
     expect(view.basePath).toBe('/my-site')
     expect(view.keyFingerprintCurrent).toBe(true)
     expect(view.updatedAt).not.toBeNull()
@@ -89,7 +86,6 @@ describe('github publish settings repository', () => {
     await upsertGithubPublishSettings(testDb.db, {
       repoUrl: TEST_REPO,
       branch: 'gh-pages',
-      targetDir: '',
       basePath: '',
       token: TEST_TOKEN,
     })
@@ -97,13 +93,11 @@ describe('github publish settings repository', () => {
     const view = await upsertGithubPublishSettings(testDb.db, {
       repoUrl: TEST_REPO,
       branch: 'main',
-      targetDir: 'public',
       basePath: '/repo',
     })
 
     expect(view.hasToken).toBe(true)
     expect(view.branch).toBe('main')
-    expect(view.targetDir).toBe('public')
     expect(await decryptGithubPublishToken(testDb.db)).toBe(TEST_TOKEN)
   })
 
@@ -111,7 +105,6 @@ describe('github publish settings repository', () => {
     await upsertGithubPublishSettings(testDb.db, {
       repoUrl: TEST_REPO,
       branch: 'gh-pages',
-      targetDir: '',
       basePath: '',
       token: TEST_TOKEN,
     })
@@ -119,7 +112,6 @@ describe('github publish settings repository', () => {
     const view = await upsertGithubPublishSettings(testDb.db, {
       repoUrl: TEST_REPO,
       branch: 'gh-pages',
-      targetDir: '',
       basePath: '',
       token: '',
     })
@@ -132,7 +124,6 @@ describe('github publish settings repository', () => {
     await upsertGithubPublishSettings(testDb.db, {
       repoUrl: TEST_REPO,
       branch: 'gh-pages',
-      targetDir: '',
       basePath: '',
       token: TEST_TOKEN,
     })
@@ -140,17 +131,27 @@ describe('github publish settings repository', () => {
     expect(await decryptGithubPublishToken(testDb.db)).toBe(TEST_TOKEN)
   })
 
-  it('rejects targetDir containing ..', async () => {
-    await expect(
-      upsertGithubPublishSettings(testDb.db, {
-        repoUrl: TEST_REPO,
-        branch: 'gh-pages',
-        targetDir: '../escape',
-        basePath: '',
-      }),
-    ).rejects.toMatchObject({
-      name: 'GithubPublishSettingsError',
-      status: 400,
-    } satisfies Partial<GithubPublishSettingsError>)
+  it('rejects branch names with shell-unsafe characters', async () => {
+    for (const branch of ['gh pages', 'gh;pages', 'gh&&push', '../escape', '- Leading-dash', 'a|b']) {
+      await expect(
+        upsertGithubPublishSettings(testDb.db, {
+          repoUrl: TEST_REPO,
+          branch,
+          basePath: '',
+        }),
+      ).rejects.toMatchObject({
+        name: 'GithubPublishSettingsError',
+        status: 400,
+      } satisfies Partial<GithubPublishSettingsError>)
+    }
+  })
+
+  it('accepts slash-nested branch names (release/1.2)', async () => {
+    const view = await upsertGithubPublishSettings(testDb.db, {
+      repoUrl: TEST_REPO,
+      branch: 'release/1.2',
+      basePath: '',
+    })
+    expect(view.branch).toBe('release/1.2')
   })
 })

@@ -1,15 +1,15 @@
 /**
- * Integration tests — GitHub publish settings + the background publish job
- * (start endpoint semantics + job endpoint outcome polling).
+ * Integration tests — GitHub publish settings + the local push kit endpoint
+ * (settings persistence, step-up gating, kit ZIP download semantics).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import type { DbClient } from '../../../server/db'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { DbClient } from '../../../server/db/client'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { handleGithubPublishRoutes } from '../../../server/handlers/cms/githubPublish'
-import {
-  resetGithubPublishJob,
-  tryBeginGithubPublishJob,
-} from '../../../server/publish/githubPublishJobRegistry'
+import { prepareInactiveSlot, swapSlot, writeArtefact } from '../../../server/publish/staticArtefact'
 import { SESSION_COOKIE_NAME } from '../../../server/auth/tokens'
 import { stampSocketIp } from '../../../server/auth/security'
 import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
@@ -20,7 +20,7 @@ const EMAIL = 'owner@example.com'
 const IP = '203.0.113.10'
 const TEST_MASTER_KEY = Buffer.alloc(32, 7).toString('base64')
 const TEST_TOKEN = 'ghp_test_secret_value_for_handlers'
-const TEST_REPO = 'https://github.com/acme/my-site'
+const TEST_REPO = 'https://github.com/mateng-cb/instatic-dite'
 
 async function safeCleanup(cleanup: () => Promise<void>): Promise<void> {
   try {
@@ -35,7 +35,7 @@ async function setup(db: DbClient): Promise<void> {
     new Request('http://localhost/admin/api/cms/setup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ siteName: 'GitHub Publish Test', email: EMAIL, password: VALID_LOGIN_PHRASE }),
+      body: JSON.stringify({ siteName: 'Push Kit Test', email: EMAIL, password: VALID_LOGIN_PHRASE }),
     }),
     db,
   )
@@ -61,11 +61,6 @@ async function login(db: DbClient): Promise<string> {
   return cookieFromSetCookie(res)
 }
 
-function withCookie(req: Request, cookie: string): Request {
-  req.headers.set('cookie', cookie)
-  return req
-}
-
 async function completeStepUp(db: DbClient, cookie: string): Promise<string> {
   const req = new Request('http://localhost/admin/api/cms/auth/step-up', {
     method: 'POST',
@@ -73,10 +68,15 @@ async function completeStepUp(db: DbClient, cookie: string): Promise<string> {
     body: JSON.stringify({ password: VALID_LOGIN_PHRASE }),
   })
   stampSocketIp(req, IP)
-  withCookie(req, cookie)
+  req.headers.set('cookie', cookie)
   const res = await handleCmsRequest(req, db)
   expect(res.status).toBe(200)
   return cookieFromSetCookie(res)
+}
+
+function withCookie(req: Request, cookie: string): Request {
+  req.headers.set('cookie', cookie)
+  return req
 }
 
 function settingsRequest(method: 'GET' | 'PUT', cookie?: string, body?: unknown): Request {
@@ -89,8 +89,8 @@ function settingsRequest(method: 'GET' | 'PUT', cookie?: string, body?: unknown)
   return req
 }
 
-function publishGithubRequest(cookie?: string, body: unknown = {}): Request {
-  const req = new Request('http://localhost/admin/api/cms/publish-github', {
+function pushPackageRequest(cookie?: string, body: unknown = {}): Request {
+  const req = new Request('http://localhost/admin/api/cms/github-publish/push-package', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -99,43 +99,27 @@ function publishGithubRequest(cookie?: string, body: unknown = {}): Request {
   return req
 }
 
-function progressRequest(cookie?: string): Request {
-  const req = new Request('http://localhost/admin/api/cms/github-publish/progress', {
-    method: 'GET',
-  })
-  if (cookie) withCookie(req, cookie)
-  return req
-}
-
-interface JobView {
-  state: 'running' | 'succeeded' | 'failed'
-  startedAt: number
-  failure?: { code: string; message: string }
-}
-
-/** Poll the job endpoint until the job settles (background job, best-effort timing). */
-async function waitForSettledJob(db: DbClient, cookie: string): Promise<JobView> {
-  const deadline = Date.now() + 5000
-  for (;;) {
-    const res = await handleGithubPublishRoutes(progressRequest(cookie), db)
-    const body = await res!.json() as { job: JobView | null }
-    if (body.job && body.job.state !== 'running') return body.job
-    if (Date.now() > deadline) throw new Error('GitHub publish job did not settle within 5s')
-    await Bun.sleep(25)
-  }
+/** A minimal published one-page site the push kit can export. */
+async function publishedUploadsDir(): Promise<string> {
+  const uploadsDir = await mkdtemp(join(tmpdir(), 'push-kit-api-uploads-'))
+  const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+  await writeArtefact(slotDir, '/', '<!DOCTYPE html><html><body>kit</body></html>')
+  await swapSlot(uploadsDir, slot)
+  return uploadsDir
 }
 
 describe('GitHub publish HTTP handlers', () => {
   let originalSecretKey: string | undefined
+  const tempDirs: string[] = []
 
   beforeEach(() => {
     originalSecretKey = process.env.INSTATIC_SECRET_KEY
     process.env.INSTATIC_SECRET_KEY = TEST_MASTER_KEY
     __resetMasterKeyCacheForTesting()
-    resetGithubPublishJob()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
     if (originalSecretKey === undefined) delete process.env.INSTATIC_SECRET_KEY
     else process.env.INSTATIC_SECRET_KEY = originalSecretKey
     __resetMasterKeyCacheForTesting()
@@ -156,7 +140,6 @@ describe('GitHub publish HTTP handlers', () => {
     const { db, cleanup } = await createTestDb()
     try {
       await setup(db)
-      // Settings do not require step-up — login cookie is enough.
       const cookie = await login(db)
 
       const emptyRes = await handleGithubPublishRoutes(settingsRequest('GET', cookie), db)
@@ -165,14 +148,12 @@ describe('GitHub publish HTTP handlers', () => {
       expect(emptyBody.hasToken).toBe(false)
       expect(Object.hasOwn(emptyBody, 'token')).toBe(false)
       expect(Object.hasOwn(emptyBody, 'tokenCiphertext')).toBe(false)
-      expect(JSON.stringify(emptyBody)).not.toContain(TEST_TOKEN)
 
       const putRes = await handleGithubPublishRoutes(
         settingsRequest('PUT', cookie, {
           repoUrl: TEST_REPO,
           branch: 'gh-pages',
-          targetDir: 'docs',
-          basePath: '/my-site',
+          basePath: '/instatic-dite',
           token: TEST_TOKEN,
         }),
         db,
@@ -180,56 +161,64 @@ describe('GitHub publish HTTP handlers', () => {
       expect(putRes?.status).toBe(200)
       const putBody = await putRes!.json() as Record<string, unknown>
       expect(putBody.hasToken).toBe(true)
-      expect(putBody.repoUrl).toBe('https://github.com/acme/my-site')
-      expect(putBody.owner).toBe('acme')
-      expect(putBody.repo).toBe('my-site')
-      expect(Object.hasOwn(putBody, 'token')).toBe(false)
+      expect(putBody.repoUrl).toBe(TEST_REPO)
+      expect(putBody.owner).toBe('mateng-cb')
+      expect(putBody.repo).toBe('instatic-dite')
       expect(JSON.stringify(putBody)).not.toContain(TEST_TOKEN)
+      expect(putBody.targetDir).toBeUndefined()
 
       const getRes = await handleGithubPublishRoutes(settingsRequest('GET', cookie), db)
       expect(getRes?.status).toBe(200)
       const getBody = await getRes!.json() as Record<string, unknown>
       expect(getBody.hasToken).toBe(true)
-      expect(Object.hasOwn(getBody, 'token')).toBe(false)
       expect(JSON.stringify(getBody)).not.toContain(TEST_TOKEN)
     } finally {
       await safeCleanup(cleanup)
     }
   })
 
-  it('PUT settings returns 400 for an invalid repo URL', async () => {
+  it('PUT settings returns 400 for an invalid repo URL or branch', async () => {
     const { db, cleanup } = await createTestDb()
     try {
       await setup(db)
       const cookie = await login(db)
 
-      const res = await handleGithubPublishRoutes(
+      const badHost = await handleGithubPublishRoutes(
         settingsRequest('PUT', cookie, {
           repoUrl: 'https://gitlab.com/acme/my-site',
           branch: 'gh-pages',
-          targetDir: '',
           basePath: '',
         }),
         db,
       )
-      expect(res?.status).toBe(400)
-      const body = await res!.json() as { error: string }
-      expect(body.error.length).toBeGreaterThan(0)
+      expect(badHost?.status).toBe(400)
+
+      const badBranch = await handleGithubPublishRoutes(
+        settingsRequest('PUT', cookie, {
+          repoUrl: TEST_REPO,
+          branch: 'gh-pages; rm -rf',
+          basePath: '',
+        }),
+        db,
+      )
+      expect(badBranch?.status).toBe(400)
     } finally {
       await safeCleanup(cleanup)
     }
   })
 
-  it('POST publish-github requires step-up after pages.publish', async () => {
+  it('POST push-package requires step-up after pages.publish', async () => {
     const { db, cleanup } = await createTestDb()
     try {
       await setup(db)
       const cookie = await login(db)
+      const uploadsDir = await publishedUploadsDir()
+      tempDirs.push(uploadsDir)
 
       const needsStepUp = await handleGithubPublishRoutes(
-        publishGithubRequest(cookie),
+        pushPackageRequest(cookie, { embedToken: false }),
         db,
-        { uploadsDir: '/tmp/unused' },
+        { uploadsDir },
       )
       expect(needsStepUp?.status).toBe(401)
       const stepUpBody = await needsStepUp!.json() as { error: string }
@@ -239,80 +228,117 @@ describe('GitHub publish HTTP handlers', () => {
     }
   })
 
-  it('POST publish-github answers 202 and surfaces a missing token as a failed job', async () => {
+  it('POST push-package returns 400 when no repository is configured', async () => {
     const { db, cleanup } = await createTestDb()
     try {
       await setup(db)
       const cookie = await completeStepUp(db, await login(db))
+      const uploadsDir = await publishedUploadsDir()
+      tempDirs.push(uploadsDir)
 
-      // Persist repo without a token so the background job fails on token-missing.
+      const res = await handleGithubPublishRoutes(
+        pushPackageRequest(cookie, { embedToken: false }),
+        db,
+        { uploadsDir },
+      )
+      expect(res?.status).toBe(400)
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
+
+  it('POST push-package returns 400 when embedding without a stored token', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+      const cookie = await completeStepUp(db, await login(db))
+      const uploadsDir = await publishedUploadsDir()
+      tempDirs.push(uploadsDir)
+
+      await handleGithubPublishRoutes(
+        settingsRequest('PUT', cookie, {
+          repoUrl: TEST_REPO,
+          branch: 'gh-pages',
+          basePath: '/instatic-dite',
+        }),
+        db,
+      )
+
+      const res = await handleGithubPublishRoutes(
+        pushPackageRequest(cookie, { embedToken: true }),
+        db,
+        { uploadsDir },
+      )
+      expect(res?.status).toBe(400)
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
+
+  it('POST push-package returns 409 when the site has not been published', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+      const cookie = await completeStepUp(db, await login(db))
+      const emptyUploads = await mkdtemp(join(tmpdir(), 'push-kit-api-empty-'))
+      tempDirs.push(emptyUploads)
+
+      await handleGithubPublishRoutes(
+        settingsRequest('PUT', cookie, {
+          repoUrl: TEST_REPO,
+          branch: 'gh-pages',
+          basePath: '/instatic-dite',
+          token: TEST_TOKEN,
+        }),
+        db,
+      )
+
+      const res = await handleGithubPublishRoutes(
+        pushPackageRequest(cookie, { embedToken: true }),
+        db,
+        { uploadsDir: emptyUploads },
+      )
+      expect(res?.status).toBe(409)
+    } finally {
+      await safeCleanup(cleanup)
+    }
+  })
+
+  it('POST push-package streams a ZIP kit for a configured, published site', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await setup(db)
+      const cookie = await completeStepUp(db, await login(db))
+      const uploadsDir = await publishedUploadsDir()
+      tempDirs.push(uploadsDir)
+
       const putRes = await handleGithubPublishRoutes(
         settingsRequest('PUT', cookie, {
           repoUrl: TEST_REPO,
           branch: 'gh-pages',
-          targetDir: '',
-          basePath: '',
+          basePath: '/instatic-dite',
+          token: TEST_TOKEN,
         }),
         db,
       )
       expect(putRes?.status).toBe(200)
 
       const res = await handleGithubPublishRoutes(
-        publishGithubRequest(cookie),
+        pushPackageRequest(cookie, { embedToken: true }),
         db,
-        { uploadsDir: '/tmp/unused' },
+        { uploadsDir },
       )
-      expect(res?.status).toBe(202)
-      const startBody = await res!.json() as { started: boolean; startedAt: number }
-      expect(startBody.started).toBe(true)
-      // The 202 carries the claimed job's identity so the client poller can
-      // tell this run apart from the previous job's settled leftovers.
-      expect(startBody.startedAt).toBeGreaterThan(0)
+      expect(res?.status).toBe(200)
+      expect(res!.headers.get('content-type')).toBe('application/zip')
+      expect(res!.headers.get('content-disposition')).toContain('instatic-push-kit.zip')
 
-      const job = await waitForSettledJob(db, cookie)
-      expect(job.startedAt).toBe(startBody.startedAt)
-      expect(job.state).toBe('failed')
-      expect(job.failure?.code).toBe('token-missing')
-      expect(job.failure?.message).toMatch(/token/i)
-    } finally {
-      await safeCleanup(cleanup)
-    }
-  })
-
-  it('POST publish-github answers 409 while a job is already running', async () => {
-    const { db, cleanup } = await createTestDb()
-    try {
-      await setup(db)
-      const cookie = await completeStepUp(db, await login(db))
-
-      // Claim the single job slot the way a real in-flight publish would.
-      expect(tryBeginGithubPublishJob()).toBe(true)
-
-      const res = await handleGithubPublishRoutes(
-        publishGithubRequest(cookie),
-        db,
-        { uploadsDir: '/tmp/unused' },
-      )
-      expect(res?.status).toBe(409)
-      const body = await res!.json() as { error: string }
-      expect(body.error).toMatch(/already in progress/i)
-    } finally {
-      await safeCleanup(cleanup)
-    }
-  })
-
-  it('GET progress requires auth and mirrors the registry', async () => {
-    const { db, cleanup } = await createTestDb()
-    try {
-      await setup(db)
-
-      const unauth = await handleGithubPublishRoutes(progressRequest(), db)
-      expect(unauth?.status).toBe(401)
-
-      const cookie = await login(db)
-      const empty = await handleGithubPublishRoutes(progressRequest(cookie), db)
-      expect(empty?.status).toBe(200)
-      expect(await empty!.json()).toEqual({ job: null })
+      const body = new Uint8Array(await res!.arrayBuffer())
+      // ZIP magic: PK\x03\x04 (local file header).
+      expect([...body.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
+      // The embedded token never appears verbatim in the ZIP? It DOES — the
+      // scripts embed it by design. The ZIP is the credential; that is the
+      // documented trade-off. Only assert the kit is non-trivial.
+      expect(body.byteLength).toBeGreaterThan(200)
     } finally {
       await safeCleanup(cleanup)
     }

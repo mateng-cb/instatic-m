@@ -1,207 +1,184 @@
-# GitHub Pages Deployment
+# GitHub Pages 部署（本地推送包）
 
-This guide covers publishing an Instatic site to GitHub Pages: prerequisites, PAT scopes, branch layout, `basePath`, and where settings live in the admin UI.
+本指南介绍如何把 Instatic 站点发布到 GitHub Pages：前置条件、PAT 权限、`basePath` 配置、推送包的使用方法，以及管理后台里的设置入口。
 
-GitHub Pages is a **static host**. Instatic does not run the Bun server on Pages — it exports the already-published snapshot with `pathMode: 'basePath'`, then pushes the file tree to a GitHub branch via the Git Data API. Local Publish (Layer A) must succeed before any export or GitHub push.
+GitHub Pages 是**静态托管**——Instatic 不会在 Pages 上运行 Bun 服务器。发布方式是「**本地推送包**」（push kit）：服务器把已发布的快照导出为静态文件、连同推送脚本一起打成 ZIP 供下载；编辑在自己电脑上双击脚本，用本地 `git` 把文件推到 GitHub 仓库。**服务器全程不访问 GitHub API**——没有跨境逐文件上传，也就没有那一环节的超时与限流。本地 Publish（Layer A）必须先成功，推送包才有内容可导。
 
 ---
 
 ## TL;DR
 
-| Step | Action |
+| 步骤 | 操作 |
 |---|---|
-| 1 | Publish the site locally in the Site editor (Layer A snapshot in `uploads/published/current/`) |
-| 2 | Create the target branch on GitHub (e.g. empty `gh-pages`) — Instatic **does not** auto-create it |
-| 3 | Set `INSTATIC_SECRET_KEY` on the server so the PAT can be encrypted at rest |
-| 4 | Configure repo URL, branch, `targetDir`, `basePath`, and PAT under **Settings → Publishing** (or in the Publish dialog) |
-| 5 | Enable GitHub Pages: **Deploy from a branch**, branch = your target, folder = `/` or `/docs` |
-| 6 | **Publish → Publish to GitHub…** — starts the export + push as a background job (step-up gated); the dialog polls live progress until the commit lands |
+| 1 | 在站点编辑器里完成本地 Publish（生成 `uploads/published/current/` 快照） |
+| 2 | 确认服务器已设置 `INSTATIC_SECRET_KEY`（PAT 加密存储的前提） |
+| 3 | 在 **Settings → Publishing**（或 Publish 对话框）配置仓库 URL、分支、`basePath`，保存 PAT |
+| 4 | **Publish → Publish to GitHub…** → 下载 `instatic-push-kit.zip`（需 step-up 验证） |
+| 5 | 解压 ZIP，双击 `push.cmd`（Windows）或运行 `bash push.sh`（macOS / Linux）完成推送 |
+| 6 | 仓库 **Settings → Pages**：Deploy from a branch → 选目标分支 → `/ (root)` |
 
-| Site type | Typical URL | `basePath` |
+| 站点类型 | 典型 URL | `basePath` |
 |---|---|---|
-| user/org Pages | `https://user.github.io/` | `""` |
-| project Pages | `https://user.github.io/my-repo/` | `/my-repo` |
-| custom domain (apex) | `https://www.example.com/` | `""` |
+| 用户/组织 Pages | `https://user.github.io/` | `""`（留空） |
+| 项目 Pages | `https://user.github.io/my-repo/` | `/my-repo` |
+| 自定义域名（根域） | `https://www.example.com/` | `""`（留空） |
+
+> ⚠️ `basePath` 必须与仓库的实际访问路径一致：仓库名是 `my-repo`，`basePath` 就必须是 `/my-repo`，否则所有 CSS / 图片 / 脚本都会 404。
 
 ---
 
-## Prerequisites
+## 前置条件
 
-### Local Publish first
+### 先完成本地 Publish
 
-GitHub publish reads the same published slot as static export. If the site has never been published, the background job fails with `failure.code: not-published` (`Site has not been published yet.`) — the start endpoint still answers **202**; the dialog surfaces the failure while polling.
-
-Workflow:
+推送包读取与静态导出相同的已发布槽位。站点从未发布过时，下载端点返回 **409**，对话框会提示先 Publish。
 
 ```text
-Site editor → Publish          (Layer A bake to uploads/published/current/)
-           → Publish to GitHub… (export with pathMode: basePath → Git Data API push)
+站点编辑器 → Publish              （Layer A 烘焙到 uploads/published/current/）
+           → Publish to GitHub…   （basePath 模式静态导出 + 生成推送脚本 → 下载 ZIP）
+           → 本机双击 push.cmd    （git 单 packfile 推送到 GitHub）
 ```
 
-Export static site (ZIP) is optional — it uses the same Phase A pipeline but defaults to `pathMode: 'relative'`. GitHub push always uses `pathMode: 'basePath'` with the configured `basePath`. See [docs/features/publisher.md](../features/publisher.md) → Static export (Phase A) and GitHub publish (Phase B).
+「Export static site…」是可选的另一条路——同一套 Phase A 管线，默认 `pathMode: 'relative'`。GitHub 推送包固定用 `pathMode: 'basePath'` + 配置的 `basePath` + `directory` 布局（Pages 按目录索引提供 `x/` → `x/index.html`）。
 
 ### `INSTATIC_SECRET_KEY`
 
-The GitHub PAT is stored encrypted in `github_publish_settings` (`server/repositories/githubPublishSettings.ts`), using the same `encryptSecret` / `decryptSecret` path as AI provider keys and MFA seeds.
+GitHub PAT 加密存储在 `github_publish_settings`（`server/repositories/githubPublishSettings.ts`），走与其他可逆密钥（AI provider key、MFA seed）相同的 `encryptSecret` / `decryptSecret` 通道。
 
-- Generate: `bun run scripts/generate-secret-key.ts`
-- Set on the server before saving a PAT in admin
-- Without it, PUT settings fails with a master-key configuration error (same as other reversible secrets)
+- 生成：`bun run scripts/generate-secret-key.ts`
+- 在服务器上设置后再到后台保存 PAT
+- 没有它，PUT settings 会报 master-key 配置错误
 
-The API never returns plaintext token, ciphertext, or IV — only `hasToken` and `keyFingerprintCurrent` on the wire view.
+API 永远不回传明文 token、密文或 IV——线路上只有 `hasToken` 和 `keyFingerprintCurrent`。
 
-### Personal access token (PAT)
+### 个人访问令牌（PAT）
 
-Create a PAT on GitHub with write access to repository contents:
+在 GitHub 创建对目标仓库内容有写权限的 PAT：
 
-| Token type | Required scope |
+| 令牌类型 | 所需权限 |
 |---|---|
-| Classic PAT | `repo` scope, or minimum **`contents: write`** on the target repo |
-| Fine-grained PAT | Repository access to the target repo; **Contents: Read and write** |
+| Classic PAT | `repo` scope，或目标仓库上最小的 **`contents: write`** |
+| Fine-grained PAT（推荐） | 仅授权目标仓库；**Contents: Read and write** |
 
-Instatic uses the Git Data API (`server/github/gitDataApiPush.ts`) — no local `git` binary. Blobs upload 4 at a time with a 60 s per-request timeout; the token is sent only to `api.github.com` during push; it is not written to logs or the export tree. The push runs as a **background job** (a full-site push takes minutes — longer than reverse-proxy timeouts such as Cloudflare's ~100 s synchronous limit), and the publish dialog polls `GET /admin/api/cms/github-publish/progress` (1 s interval) for per-file upload progress (`Uploading files 45/132 — path`) and the final outcome.
+推荐 fine-grained PAT：爆炸半径只限一个仓库，泄漏后可直接撤销。
 
-Every push writes a root **`.nojekyll`** marker into the target tree. GitHub Pages runs Jekyll by default and Jekyll silently drops `_`-prefixed paths — all Instatic assets live under `_instatic/`, so without the marker every stylesheet and runtime script would 404 on Pages.
+**后台轮换方式**：PUT 时不带 `token` → 保留现有；空字符串 → 清除；非空 → 替换。
 
-**Token rotation in admin:** omit `token` on PUT → keep existing; empty string → clear; non-empty string → replace.
+### 本机需要 `git`
+
+推送脚本用本机的 `git` 命令行完成推送（这也是方案的核心：跨境走 git 协议的单 packfile 流，而不是数百个独立 HTTPS API 请求）。Windows 装 [Git for Windows](https://git-scm.com/download/win) 即可——`push.cmd` 会自动调用其内置的 `git.exe`。
 
 ---
 
-## GitHub repository setup
+## 推送包内容
 
-### Create the target branch
-
-Instatic **does not** create branches. If the configured branch (default `gh-pages`) does not exist, push fails with:
-
-```txt
-Branch does not exist: <branch>. Create the branch on GitHub before publishing.
-```
-
-Create the branch before the first push:
-
-1. On GitHub: create an orphan branch (e.g. `gh-pages`) with an initial empty commit, **or**
-2. Push an empty tree from another tool, **or**
-3. Use an existing branch (e.g. `main`) and set that name in Instatic settings
-
-### Enable GitHub Pages
-
-In the repository **Settings → Pages**:
-
-| Setting | Value |
-|---|---|
-| Source | Deploy from a branch |
-| Branch | Same as Instatic **Branch** field (default `gh-pages`) |
-| Folder | `/` when **Target directory** in Instatic is empty; `/docs` when **Target directory** is `docs` |
-
-Instatic does **not** call the Pages enable API — enable Pages manually after the first successful push.
-
-Custom domains: configure in GitHub Pages settings; use `basePath: ""` when the site is served at the domain apex (see table above).
-
----
-
-## Admin configuration
-
-Two entry points share the same persisted row (`github_publish_settings`, singleton `id = 'default'`):
-
-| Location | Purpose |
-|---|---|
-| **Settings → Publishing** → GitHub Pages block | Save defaults and PAT (`putGithubPublishSettings`). Does not push. |
-| **Site editor → Publish menu → Publish to GitHub…** | `GithubPublishDialog` — loads settings, saves on submit, starts the push job, polls until it settles (adopting an already-running job if the dialog opens mid-push) |
-
-Fields:
-
-| Field | Meaning |
-|---|---|
-| Repository URL | e.g. `https://github.com/owner/repo` — parsed by `server/github/parseRepoUrl.ts` |
-| Branch | Ref to update (default `gh-pages`) |
-| Target directory | Subtree under branch root; empty = replace entire branch tree; `docs` = push under `docs/` |
-| Base path | URL prefix for asset rewrite — `/my-repo` for project Pages, empty for user/org or apex custom domain |
-| PAT | Encrypted at rest; shown as “Token saved” when present |
-
-Push requires capability `pages.publish` plus step-up (same blast radius as local Publish and static export ZIP).
-
----
-
-## Push semantics
+ZIP 根目录：
 
 ```text
-publishSiteToGithub (server/publish/githubPublish.ts)
-  ├─► exportPublishedSiteStatic({ pathMode: 'basePath', basePath })
-  └─► gitDataApiPush({ owner, repo, branch, targetDir, exportDir })
-        blobs → tree → commit → update ref
+instatic-push-kit.zip
+├── site/          静态导出（index.html、uploads/…、_instatic/…、.nojekyll）
+├── push.cmd       Windows 推送脚本（双击运行）
+├── push.sh        macOS / Linux 推送脚本（bash push.sh）
+└── README.txt     中文使用说明（含目标仓库、分支、页数、凭证状态）
 ```
 
-| `targetDir` | Effect on branch |
+脚本做的事：在 `site/` 里 `git init` → 提交全部文件 → `git push -f origin <branch>`。**force push 整树替换**——每次推送都是全新历史，不会和远端产生合并冲突；远端分支不存在时会自动创建（无需预先建空分支）。推送结束后脚本会 `git remote remove origin`，把含凭证的 remote 从本地配置里清掉。
+
+每个包都带根级 **`.nojekyll`** 标记。GitHub Pages 默认跑 Jekyll，而 Jekyll 会丢弃 `_` 前缀路径——Instatic 的资产都在 `_instatic/` 下，没有这个标记所有样式和运行时脚本都会 404。
+
+### Token 嵌入选项
+
+下载对话框里的「在脚本中嵌入访问令牌」开关（默认开）决定推送是否需要交互：
+
+| 选项 | 行为 | 适用 |
+|---|---|---|
+| 嵌入（默认） | PAT 写入脚本里的 remote URL（`https://<token>@github.com/...`），双击即推，零交互 | ZIP 只发给内部人员/自己 |
+| 不嵌入 | 首次推送弹出 GitHub 登录/浏览器授权（凭本机 git 凭证管理器） | ZIP 需要外发或长期保存 |
+
+> ⚠️ **嵌入版 ZIP 等同于一把仓库钥匙**——拿到它的人可以直接推代码到目标仓库。只通过可信渠道分发；建议配合 fine-grained PAT 把权限锁到单个仓库。
+
+---
+
+## 仓库设置
+
+### 启用 GitHub Pages
+
+第一次推送成功后，在仓库 **Settings → Pages**：
+
+| 设置 | 值 |
 |---|---|
-| `""` | New commit tree is **only** the export files (full tip replace) |
-| `docs` (example) | Removes prior paths under `docs/`, keeps sibling paths, writes export under `docs/` |
+| Source | Deploy from a branch |
+| Branch | 与 Instatic **Branch** 字段相同的分支（默认 `gh-pages`） |
+| Folder | `/ (root)` |
 
-Media in the export includes **only files referenced by published pages** after URL rewrite — not the full uploads library. See Phase A export rules in [docs/features/publisher.md](../features/publisher.md).
+Instatic 不会调用 Pages 启用 API——推送后手动启用一次。自定义域名也在 Pages 设置里配；站点挂在域名根路径时 `basePath` 留空（见上文表格）。
 
----
+### 分支保护
 
-## Size and API limits
-
-Soft guidance for operators:
-
-- Export packs referenced media only, but large sites (many high-resolution assets, long runtime bundles) can still produce a heavy tree.
-- Each file is uploaded as a Git blob; **single files over 100 MB** fail with a clear error (no Git LFS in phase B).
-- GitHub rate-limits the REST API; `gitDataApiPush` retries **429** and **5xx** responses up to three times.
-- Very large repositories may hit GitHub’s recursive tree size limits during subtree replace — push fails with an explicit truncation error.
-
-If push fails after a successful export, the server keeps the temp export directory for inspection/retry; successful push deletes it.
+脚本用 force push 整树替换。如果目标分支在 GitHub 上开了分支保护（包括把默认分支当作推送目标），force push 会被拒绝——推送目标请用专用的 `gh-pages` 之类分支，不要推到受保护的 `main`。
 
 ---
 
-## HTTP API (operator reference)
+## 后台配置
 
-| Method | Path | Auth |
+两个入口共用同一行持久化配置（`github_publish_settings`，单例 `id = 'default'`）：
+
+| 位置 | 用途 |
+|---|---|
+| **Settings → Publishing** → GitHub Pages 块 | 保存默认值和 PAT（`putGithubPublishSettings`）。不下载、不推送。 |
+| **站点编辑器 → Publish 菜单 → Publish to GitHub…** | `GithubPublishDialog` —— 加载配置、可修改后保存、选择是否嵌入 token、下载推送包 |
+
+字段：
+
+| 字段 | 含义 |
+|---|---|
+| Repository URL | 如 `https://github.com/owner/repo`（由 `server/github/parseRepoUrl.ts` 解析） |
+| Branch | 推送目标分支（默认 `gh-pages`；只允许字母、数字、`.`、`_`、`-`、`/`） |
+| Base path | 资产 URL 重写前缀——项目 Pages 填 `/my-repo`，用户/组织站或根域名留空 |
+| PAT | 加密存储；已保存时显示 "Token saved" |
+
+下载推送包需要 `pages.publish` 能力 + step-up（与本地 Publish、静态导出 ZIP 同级）。
+
+---
+
+## HTTP API（运维参考）
+
+| 方法 | 路径 | 权限 |
 |---|---|---|
 | `GET` | `/admin/api/cms/github-publish/settings` | `pages.publish` |
 | `PUT` | `/admin/api/cms/github-publish/settings` | `pages.publish` |
-| `GET` | `/admin/api/cms/github-publish/progress` | `pages.publish` |
-| `POST` | `/admin/api/cms/publish-github` | `pages.publish` + step-up |
+| `POST` | `/admin/api/cms/github-publish/push-package` | `pages.publish` + step-up |
 
-Handler: `server/handlers/cms/githubPublish.ts`. Client helpers: `src/core/persistence/cmsGithubPublish.ts`.
+Handler：`server/handlers/cms/githubPublish.ts`。客户端助手：`src/core/persistence/cmsGithubPublish.ts`。
 
-`POST /publish-github` starts the job and answers **202** `{ started: true, startedAt }` immediately — the push itself runs in the background and its outcome arrives on the progress endpoint (`job.state: 'succeeded'` with `result: { commitSha, repoUrl, branch, report }`, or `'failed'` with `failure`). `startedAt` identifies the freshly claimed job: the dialog's poller only settles on a job whose `startedAt` matches, so the previous run's settled leftover view never masquerades as this run's outcome.
+`POST push-package` body `{ "embedToken": boolean }`（默认 `false`），同步构建并流式返回 ZIP（`application/zip` + `Content-Disposition: attachment; filename="instatic-push-kit.zip"`）。没有后台任务、没有轮询——问题域是一次下载。
 
-| Status | Cause |
+| 状态码 | 原因 |
 |---|---|
-| `202` | Job started — poll the progress endpoint for the outcome |
-| `409` | A GitHub publish job is already running (single slot) |
-
-Job `failure.code` values (surfaced by the dialog as the failure message):
-
-| Code | Cause |
-|---|---|
-| `not-published` | Site not published locally |
-| `per-visitor-hole` | Per-visitor dynamic hole — same as static export |
-| `token-missing` / `config-incomplete` | Missing token or incomplete repo config |
-| `push-failed` | GitHub push failed — the message is the raw Git Data API failure (e.g. `Branch does not exist: gh-pages. Create the branch on GitHub before publishing.`); the export dir is kept on the server |
-| `internal` | Unexpected server error |
+| `200` | 成功，返回 ZIP 流 |
+| `400` | 仓库未配置 / 嵌入 token 但服务器没存 PAT / 配置非法 |
+| `409` | 站点尚未本地 Publish |
+| `422` | 导出中止——存在 per-visitor 动态洞（同静态导出） |
 
 ---
 
-## Out of scope (phase B)
+## 范围外
 
-- GitHub App installation tokens
-- Non-GitHub hosts (GitLab, Codeberg, …)
-- Auto-enable Pages via GitHub API
-- Local `git` CLI on the server
+- GitHub App 安装令牌
+- 非 GitHub 主机（GitLab、Codeberg……）
+- 通过 API 自动启用 GitHub Pages
+- 服务器端直推（已废弃：跨境逐文件调 Git Data API 的方案在大陆网络环境下不可用，由本推送包方案取代）
 
 ---
 
-## Related
+## 相关
 
-- [docs/features/publisher.md](../features/publisher.md) — Publish pipeline, static export (Phase A), GitHub publish (Phase B)
-- [docs/deployment/README.md](README.md) — deployment index and `INSTATIC_SECRET_KEY`
-- Source-of-truth files:
-  - `server/publish/githubPublish.ts` — orchestrator
-  - `server/publish/githubPublishJob.ts` + `githubPublishJobRegistry.ts` — background job runner + single-slot registry
-  - `server/github/gitDataApiPush.ts` — Git Data API push
-  - `server/repositories/githubPublishSettings.ts` — settings + PAT encryption
-  - `server/handlers/cms/githubPublish.ts` — HTTP routes
-  - `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` — push dialog
-  - `src/admin/modals/Settings/sections/PublishingSection.tsx` — settings block
-- Tests: `src/__tests__/server/githubPublishOrchestrator.test.ts`, `src/__tests__/server/githubGitDataApiPush.test.ts`, `src/__tests__/server/githubPublishSettings.test.ts`, `src/__tests__/server/githubPublishJobRegistry.test.ts`, `src/__tests__/server/cmsGithubPublish.test.ts`
+- [docs/features/publisher.md](../features/publisher.md) —— 发布管线、静态导出（Phase A）、GitHub 推送包（Phase B）
+- [docs/deployment/README.md](README.md) —— 部署索引与 `INSTATIC_SECRET_KEY`
+- 事实源文件：
+  - `server/publish/localPushKit.ts` —— 推送包打包器（导出 + 脚本 + README）
+  - `server/repositories/githubPublishSettings.ts` —— 配置 + PAT 加密
+  - `server/handlers/cms/githubPublish.ts` —— HTTP 路由
+  - `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` —— 下载对话框
+  - `src/admin/modals/Settings/sections/PublishingSection.tsx` —— 设置块
+- 测试：`src/__tests__/server/localPushKit.test.ts`、`src/__tests__/server/githubPublishSettings.test.ts`、`src/__tests__/server/cmsGithubPublish.test.ts`
