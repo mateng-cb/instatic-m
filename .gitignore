@@ -60,6 +60,11 @@ data/*.db-wal
 !.agents/skills/instatic-user-e2e/**
 .skills/
 
+# Per-site local dev workspaces (.sites/<site>/data + uploads) — disposable
+# scratch copies of a Site's data, never source and never backups.
+# See docs/deployment/local-workspaces.md.
+.sites/
+
 # User uploads — runtime data, never commit
 # (real user media has PII risk; plugin/font runtime artifacts are not source)
 uploads/*
@@ -84,3 +89,6 @@ docs/superpowers/
 .trae/
 .windsurf/
 .specstory/
+
+# Server SSH access — credentials, never commit
+deploy/ecs/

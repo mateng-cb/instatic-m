@@ -19,6 +19,10 @@
  * This is destructive and intentionally local-only — never run it against a
  * database you care about. Pass `-y` / `--yes` to skip the confirmation
  * prompt (useful for scripting).
+ *
+ * Pass `--site <name>` to target a per-site local workspace instead
+ * (.sites/<name>/data/cms.db + .sites/<name>/uploads — SQLite only; see
+ * scripts/dev-site.sh and docs/deployment/local-workspaces.md).
  */
 
 import { SQL } from 'bun'
@@ -38,7 +42,21 @@ function fail(msg: string): never {
 
 const skipPrompt = process.argv.slice(2).some((arg) => arg === '-y' || arg === '--yes' || arg === '--force')
 
-const config = readServerConfig()
+// --site <name>: target a per-site local workspace instead of the default
+// dev database. Workspaces are always SQLite.
+const siteFlagIndex = process.argv.indexOf('--site')
+const siteName = siteFlagIndex >= 0 ? process.argv[siteFlagIndex + 1] : undefined
+if (siteFlagIndex >= 0 && !siteName) {
+  fail('--site requires a site name, e.g. `bun run db:drop --site ditexpo`.')
+}
+const siteEnv = siteName
+  ? {
+      DATABASE_URL: `sqlite:./.sites/${siteName}/data/cms.db`,
+      UPLOADS_DIR: `./.sites/${siteName}/uploads`,
+    }
+  : undefined
+
+const config = readServerConfig(siteEnv)
 const { databaseUrl, uploadsDir } = config
 
 // --- confirmation ----------------------------------------------------------
