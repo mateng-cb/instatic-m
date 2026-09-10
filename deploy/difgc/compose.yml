@@ -1,0 +1,40 @@
+# compose.yml — one Instatic instance for ONE site.
+#
+# Each site is its own Compose project (this file + .env + data/ + uploads/
+# live together in deploy/<site>/). Upgrading, restarting, or tearing down one
+# site can never touch another: there is no shared compose file, no shared
+# project, no shared image variable.
+#
+# Usage (from this directory):
+#   cp .env.example .env      # once, then fill in
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Docs: docs/deployment/multi-site.md
+
+services:
+  app:
+    image: ${INSTATIC_IMAGE:?set INSTATIC_IMAGE in .env next to this file}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3001"
+    environment:
+      PORT: "3001"
+      STATIC_DIR: /app/dist
+      UPLOADS_DIR: /app/uploads
+      DATABASE_URL: sqlite:/app/data/cms.db
+      # These must reach the CONTAINER: compose only interpolates .env into this
+      # file, it does not export .env into the container environment. Missing
+      # PUBLIC_ORIGIN here makes the CSRF origin check reject admin logins (403).
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:-}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "bun", "run", "server/healthcheck.ts"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

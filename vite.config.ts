@@ -263,11 +263,12 @@ export default defineConfig({
   server: {
     watch: {
       // Runtime-written paths: the publish pipeline bakes HTML into the uploads
-      // dir, the SQLite DB and E2E artefacts live under .tmp, and dist holds the
-      // built bundle. None are part of the client module graph, so watching them
-      // only triggers spurious full reloads — which, during E2E, would reload the
-      // admin app mid-test. Ignore them.
-      ignored: ['**/.tmp/**', '**/uploads/**', '**/dist/**'],
+      // dir, the SQLite DB and E2E artefacts live under .tmp, per-site dev
+      // workspaces live under .sites, and dist holds the built bundle. None are
+      // part of the client module graph, so watching them only triggers
+      // spurious full reloads — which, during E2E, would reload the admin app
+      // mid-test. Ignore them.
+      ignored: ['**/.tmp/**', '**/uploads/**', '**/.sites/**', '**/dist/**'],
     },
     proxy: {
       // The whole `/admin/api/` prefix (CMS + agent) is forwarded to the
