@@ -11,6 +11,8 @@ A complete backup includes the database and the uploaded media. The procedure de
 | VPS SQLite Compose | Copy `/app/data/cms.db` from the `data` volume | Archive the `uploads` volume |
 | VPS Postgres Compose | `pg_dump` from the `postgres` service | Archive the `uploads` volume |
 
+For per-site SQLite deployments (`deploy/<site>/` with bind-mounted `./data` and `./uploads`), `deploy/backup-site.sh` does both in one command and is cron-ready — see "SQLite mode — backup" below.
+
 ## Postgres mode — backup
 
 Create a local backup directory:
@@ -85,6 +87,24 @@ docker compose -f compose.prod.yml up -d
 ## SQLite mode — backup
 
 The `compose.sqlite.yml` override stores the SQLite database in the `data` named volume at `/app/data/cms.db`. Both ad-hoc and continuous strategies are documented below.
+
+### One-command script (per-site deployments, cron-ready)
+
+For `deploy/<site>/` deployments where `data/` and `uploads/` are bind-mounted host folders, use the bundled script:
+
+```sh
+cd deploy
+./backup-site.sh ditexpo                # writes to deploy/backups/ditexpo/
+./backup-site.sh ditexpo /backup/dir    # or an explicit output dir
+```
+
+It snapshots `data/cms.db` with SQLite's online backup API (safe while the app runs), tars `uploads/`, and deletes snapshots older than `RETAIN_DAYS` days (default 14). Nightly cron:
+
+```
+17 3 * * * cd /opt/instatic/deploy && ./backup-site.sh ditexpo >> backup.log 2>&1
+```
+
+Restore a snapshot by stopping the app and following the "SQLite mode — restore" steps below.
 
 ### Ad-hoc snapshot (transactional, safe while the app is running)
 
