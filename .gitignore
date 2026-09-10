@@ -89,3 +89,6 @@ docs/superpowers/
 .trae/
 .windsurf/
 .specstory/
+
+# Server SSH access — credentials, never commit
+deploy/ecs/
