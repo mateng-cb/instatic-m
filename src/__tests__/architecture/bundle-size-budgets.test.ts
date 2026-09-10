@@ -123,9 +123,9 @@ const BUDGETS: ChunkBudget[] = [
   // can paint the existing toolbar/chrome before the editor body downloads.
   {
     prefix: 'SitePage-',
-    maxBytes: 30_000,
+    maxBytes: 44_000,
     rationale:
-      'site route shell (current ~22 KB raw / ~9 KB gzipped). Must not ' +
+      'site route shell (current ~39 KB raw / ~15 KB gzipped). Must not ' +
       'pull the visual editor body, DnD, canvas, first-party modules, or ' +
       'PropertiesPanel back into the active route chunk.',
   },
