@@ -1,0 +1,25 @@
+# DITE seed layer — bakes the current local site into the image.
+#
+# The build context is assembled by scripts/build-dite-release.ts at
+# .tmp/dite-seed/ (repo .dockerignore excludes uploads/ and .tmp/, so the seed
+# build must use that assembled directory as its context, not the repo root):
+#   data/cms.db   consistent SQLite snapshot of the local dev database
+#   uploads/      full media library + published artefacts
+#
+# FROM the plain product image — the same tag compose.prod.yml builds by
+# default (`image: ${INSTATIC_IMAGE:-instatic-m:local}`). The runtime stage
+# pre-creates /app/data and /app/uploads owned by bun:bun; COPY --chown keeps
+# the seeded files writable by the non-root user.
+#
+# First `docker compose up` on the server copies both directories out of the
+# image into the empty named volumes (Docker's volume copy-on-create). From
+# then on the volumes hold the live data and image redeploys never touch it.
+FROM instatic-m:local
+
+ARG DITE_RELEASE=unknown
+LABEL org.opencontainers.image.title="Instatic DITE" \
+      org.opencontainers.image.description="Instatic CMS pre-seeded with the DITE site." \
+      instatic.dite.release="${DITE_RELEASE}"
+
+COPY --chown=bun:bun data /app/data
+COPY --chown=bun:bun uploads /app/uploads
