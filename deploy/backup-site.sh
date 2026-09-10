@@ -8,12 +8,12 @@
 #
 # Retention: snapshots older than RETAIN_DAYS days are deleted.
 #
-# Usage:
-#   ./backup-site.sh <site-dir>              # e.g. ./backup-site.sh ditexpo
-#   ./backup-site.sh <site-dir> /backup/dir  # custom output dir
+# Usage (install this script in /opt/sites/, where each site is a subdir):
+#   /opt/sites/backup-site.sh ditexpo              # → /opt/sites/backups/ditexpo/
+#   /opt/sites/backup-site.sh ditexpo /backup/dir  # custom output dir
 #
 # Cron (nightly 03:17):
-#   17 3 * * * cd /opt/instatic/deploy && ./backup-site.sh ditexpo >> backup.log 2>&1
+#   17 3 * * * /opt/sites/backup-site.sh ditexpo >> /opt/sites/backup.log 2>&1
 #
 # Docs: docs/deployment/backup-restore.md, docs/deployment/multi-site.md
 

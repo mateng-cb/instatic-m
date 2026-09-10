@@ -90,18 +90,17 @@ The `compose.sqlite.yml` override stores the SQLite database in the `data` named
 
 ### One-command script (per-site deployments, cron-ready)
 
-For `deploy/<site>/` deployments where `data/` and `uploads/` are bind-mounted host folders, use the bundled script:
+For per-site deployments (`/opt/sites/<site>/` with `data/` and `uploads/` as bind-mounted host folders), use the bundled script — install it next to the site directories:
 
 ```sh
-cd deploy
-./backup-site.sh ditexpo                # writes to deploy/backups/ditexpo/
-./backup-site.sh ditexpo /backup/dir    # or an explicit output dir
+/opt/sites/backup-site.sh ditexpo                # writes to /opt/sites/backups/ditexpo/
+/opt/sites/backup-site.sh ditexpo /backup/dir    # or an explicit output dir
 ```
 
 It snapshots `data/cms.db` with SQLite's online backup API (safe while the app runs), tars `uploads/`, and deletes snapshots older than `RETAIN_DAYS` days (default 14). Nightly cron:
 
 ```
-17 3 * * * cd /opt/instatic/deploy && ./backup-site.sh ditexpo >> backup.log 2>&1
+17 3 * * * /opt/sites/backup-site.sh ditexpo >> /opt/sites/backup.log 2>&1
 ```
 
 Restore a snapshot by stopping the app and following the "SQLite mode — restore" steps below.
