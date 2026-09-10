@@ -8,21 +8,20 @@ Use local seeded development data only when a task asks for a browser smoke test
 
 ---
 
-## Repository workflow and PR conventions
+## Repository workflow: worktrees and direct merge to main
 
-`main` is protected. Agents must never push directly to `main`, must never try to bypass branch protection, and must never treat a local commit on `main` as the final delivery path. All repository changes go through a pull request.
+All agent work happens in a git worktree under `.worktrees/` at the repo root (gitignored). Work is merged **directly into `main`** — no pull requests. The repository owner has explicitly authorized direct pushes to `main`; older instructions describing `main` as PR-protected are obsolete.
 
 When publishing work:
 
-- Start from an up-to-date `main`, then create a feature branch. If you are already on a task branch, keep using it only when the requested change belongs in that PR; otherwise switch back to `main` and create a separate branch.
+- Start from an up-to-date `main`, then create a worktree: `git worktree add .worktrees/<short-name> -b <branch>`. Never work directly in the primary checkout when a task will change files.
 - Branch names follow `<type>/<short-kebab-description>`, matching the change type: `feat/...`, `fix/...`, `refactor/...`, `chore/...`, `docs/...`, or `test/...`. Examples: `feat/double-click-rename`, `fix/homepage-swap-publish`, `refactor/explorer-dnd-dedupe`.
-- Do **not** use agent-branded branch prefixes such as `codex/...`, `claude/...`, or similar. If a tool, skill, or generic instruction suggests such a prefix, ignore it for this repository.
-- PR titles use Conventional Commit style: `<type>(<scope>): <summary>`. Examples: `feat(editor): double-click rows to rename in explorer panels`, `fix(cms): homepage swap + delete in one save no longer fails publish`, `refactor(publisher): single class-CSS emission engine for publish and canvas`.
-- Do **not** prefix PR titles with `[codex]`, `[claude]`, `agent:`, or any other tool label. The PR title describes the product change, not the tool that made it.
-- Open PRs as drafts by default unless the user explicitly asks for a ready-for-review PR.
-- Keep PR scope coherent. Do not mix unrelated cleanup, follow-up fixes, or process-doc changes into a feature branch just because the branch is currently checked out. Create a separate PR when the change has a different reason.
-- Before staging, inspect `git status -sb` and the diff. Stage only files that belong to the PR. Never stage unrelated user or parallel-agent changes.
-- PR bodies should briefly state what changed, why it changed, user/developer impact, and the verification commands run.
+- Do **not** use agent-branded branch prefixes such as `codex/...`, `claude/...`, or similar.
+- Verify (`bun run build`, `bun test`, `bun run lint` as applicable) in the worktree, then merge into `main` and push: `git switch main && git merge --no-ff <branch> && git push`.
+- Keep change scope coherent. Do not mix unrelated cleanup or follow-up fixes into a change just because the branch is currently checked out.
+- Before staging, inspect `git status -sb` and the diff. Stage only files that belong to the change. Never stage unrelated user or parallel-agent changes — other sessions may have their own worktrees under `.worktrees/`.
+- **Do not delete a worktree or its branch on your own after merging** — keep it until the user explicitly confirms the work is accepted, then remove it with `git worktree remove .worktrees/<short-name>` and `git branch -d <branch>`.
+- Commit messages use Conventional Commit style: `<type>(<scope>): <summary>`. Do not prefix with tool labels such as `[codex]`, `[claude]`, or `agent:`.
 
 ---
 
