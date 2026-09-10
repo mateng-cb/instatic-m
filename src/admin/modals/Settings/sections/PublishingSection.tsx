@@ -2,8 +2,8 @@
  * PublishingSection — self-hosted CMS publishing details + GitHub Pages defaults.
  *
  * The GitHub Pages block only persists settings/token via
- * `putGithubPublishSettings`. Pushing runs from the Site editor Publish menu
- * 「Publish to GitHub…」.
+ * `putGithubPublishSettings`. Downloading the push kit runs from the Site
+ * editor Publish menu 「Publish to GitHub…」.
  */
 import { useEffect, useId, useState } from 'react'
 import { useSiteSettingsController } from '../useSiteSettingsController'
@@ -25,7 +25,6 @@ const DEFAULT_BRANCH = 'gh-pages'
 interface GithubFormValues {
   repoUrl: string
   branch: string
-  targetDir: string
   basePath: string
   token: string
   hasToken: boolean
@@ -43,7 +42,6 @@ async function loadGithubSettings(
   apply: (values: {
     repoUrl: string
     branch: string
-    targetDir: string
     basePath: string
     hasToken: boolean
   }) => void,
@@ -55,7 +53,6 @@ async function loadGithubSettings(
     apply({
       repoUrl: settings.repoUrl,
       branch: settings.branch || DEFAULT_BRANCH,
-      targetDir: settings.targetDir,
       basePath: settings.basePath,
       hasToken: settings.hasToken,
     })
@@ -76,17 +73,15 @@ async function saveGithubSettings(
 ): Promise<void> {
   const repoUrl = values.repoUrl.trim()
   const branch = values.branch.trim() || DEFAULT_BRANCH
-  const targetDir = values.targetDir.trim()
   const basePath = values.basePath.trim()
   const token = values.token.trim()
 
   const body: {
     repoUrl: string
     branch: string
-    targetDir: string
     basePath: string
     token?: string
-  } = { repoUrl, branch, targetDir, basePath }
+  } = { repoUrl, branch, basePath }
 
   // Omit token to keep; '' to clear; non-empty to rotate.
   if (values.clearToken) {
@@ -198,7 +193,6 @@ export function PublishingSection() {
 function GithubPagesBlock() {
   const repoUrlId = useId()
   const branchId = useId()
-  const targetDirId = useId()
   const basePathId = useId()
   const tokenId = useId()
 
@@ -208,7 +202,6 @@ function GithubPagesBlock() {
 
   const [repoUrl, setRepoUrl] = useState('')
   const [branch, setBranch] = useState(DEFAULT_BRANCH)
-  const [targetDir, setTargetDir] = useState('')
   const [basePath, setBasePath] = useState('')
   const [token, setToken] = useState('')
   const [hasToken, setHasToken] = useState(false)
@@ -228,7 +221,6 @@ function GithubPagesBlock() {
         if (cancelled) return
         setRepoUrl(values.repoUrl)
         setBranch(values.branch)
-        setTargetDir(values.targetDir)
         setBasePath(values.basePath)
         setHasToken(values.hasToken)
         setToken('')
@@ -248,7 +240,7 @@ function GithubPagesBlock() {
 
   function handleSave() {
     void saveGithubSettings(
-      { repoUrl, branch, targetDir, basePath, token, hasToken, clearToken },
+      { repoUrl, branch, basePath, token, hasToken, clearToken },
       setSaving,
       setHasToken,
       setClearToken,
@@ -272,8 +264,9 @@ function GithubPagesBlock() {
         GitHub Pages
       </h4>
       <p className={s.preferenceCategoryDesc}>
-        Store repository defaults and a personal access token here. Pushing the static export
-        happens from the Publish menu 「Publish to GitHub…」 — this block only saves settings.
+        Store repository defaults and a personal access token here. Downloading the push kit (the
+        static export + scripts that publish it to GitHub from your machine) happens from the
+        Publish menu 「Publish to GitHub…」 — this block only saves settings.
       </p>
 
       {loading ? (
@@ -310,22 +303,6 @@ function GithubPagesBlock() {
               value={branch}
               onChange={(event) => setBranch(event.target.value)}
               placeholder={DEFAULT_BRANCH}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={saving}
-            />
-          </div>
-
-          <div className={s.genFieldRow}>
-            <label htmlFor={targetDirId} className={s.label}>
-              Target directory
-            </label>
-            <Input
-              id={targetDirId}
-              type="text"
-              value={targetDir}
-              onChange={(event) => setTargetDir(event.target.value)}
-              placeholder="docs (empty = branch root)"
               autoComplete="off"
               spellCheck={false}
               disabled={saving}

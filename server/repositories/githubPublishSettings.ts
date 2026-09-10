@@ -3,13 +3,18 @@
  *
  * Owns:
  *   - All SQL touching the singleton settings row (`id = 'default'`).
- *   - PAT encryption on write + decryption for push (`decryptGithubPublishToken`).
+ *   - PAT encryption on write + decryption for the local push kit
+ *     (`decryptGithubPublishToken`).
  *   - The wire-safe `GithubPublishSettingsView` projection — the ONLY shape
  *     from this table that may cross the HTTP boundary.
  *
  * Does NOT own:
  *   - HTTP semantics (handlers map `GithubPublishSettingsError.status`).
- *   - Git Data API push (`server/github/gitDataApiPush.ts`).
+ *   - The push kit itself (`server/publish/localPushKit.ts`).
+ *
+ * The legacy `target_dir` column stays in the table (additive-only schema
+ * policy) but is no longer read or written — the push kit always replaces the
+ * whole branch tree.
  */
 
 import type { DbClient } from '../db/client'
@@ -24,12 +29,15 @@ import { isoDateOrNull } from '@core/utils/isoDate'
 
 const ROW_ID = 'default'
 
+/** Branch names become shell arguments in the generated push scripts — keep
+ * them on a strict allowlist at the persistence boundary. */
+const BRANCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
 export type GithubPublishSettingsView = {
   repoUrl: string
   owner: string
   repo: string
   branch: string
-  targetDir: string
   basePath: string
   hasToken: boolean
   keyFingerprintCurrent: boolean
@@ -39,7 +47,6 @@ export type GithubPublishSettingsView = {
 export type UpsertGithubPublishSettingsInput = {
   repoUrl: string
   branch: string
-  targetDir: string
   basePath: string
   /** omit = keep; '' = clear; other = rotate */
   token?: string
@@ -50,7 +57,6 @@ interface GithubPublishSettingsRow {
   owner: string
   repo: string
   branch: string
-  target_dir: string
   base_path: string
   token_ciphertext: Uint8Array | null
   token_iv: Uint8Array | null
@@ -88,22 +94,11 @@ function emptyView(): GithubPublishSettingsView {
     owner: '',
     repo: '',
     branch: 'gh-pages',
-    targetDir: '',
     basePath: '',
     hasToken: false,
     keyFingerprintCurrent: true,
     updatedAt: null,
   }
-}
-
-function normalizeTargetDir(raw: string): string {
-  const trimmed = raw.trim().replace(/^\/+|\/+$/g, '')
-  for (const segment of trimmed.split('/')) {
-    if (segment === '..') {
-      throw new GithubPublishSettingsError('targetDir must not contain ".."', 400)
-    }
-  }
-  return trimmed
 }
 
 async function rowToView(row: GithubPublishSettingsRow): Promise<GithubPublishSettingsView> {
@@ -117,7 +112,6 @@ async function rowToView(row: GithubPublishSettingsRow): Promise<GithubPublishSe
     owner: row.owner,
     repo: row.repo,
     branch: row.branch,
-    targetDir: row.target_dir,
     basePath: row.base_path,
     hasToken,
     keyFingerprintCurrent:
@@ -128,7 +122,7 @@ async function rowToView(row: GithubPublishSettingsRow): Promise<GithubPublishSe
 
 async function readRow(db: DbClient): Promise<GithubPublishSettingsRow | null> {
   const { rows } = await db<GithubPublishSettingsRow>`
-    select repo_url, owner, repo, branch, target_dir, base_path,
+    select repo_url, owner, repo, branch, base_path,
            token_ciphertext, token_iv, key_fingerprint, updated_at
     from github_publish_settings
     where id = ${ROW_ID}
@@ -203,17 +197,23 @@ export async function upsertGithubPublishSettings(
     )
   }
 
-  const targetDir = normalizeTargetDir(input.targetDir)
+  const branch = input.branch.trim()
+  if (!BRANCH_PATTERN.test(branch)) {
+    throw new GithubPublishSettingsError(
+      'Branch name may only contain letters, digits, ".", "_", "-", "/" and must not start with "." or "/"',
+    )
+  }
+
   const { tokenCiphertext, tokenIv, keyFingerprint } = await resolveTokenFields(db, input.token)
 
   const { rows } = await db<GithubPublishSettingsRow>`
     insert into github_publish_settings (
-      id, repo_url, owner, repo, branch, target_dir, base_path,
+      id, repo_url, owner, repo, branch, base_path,
       token_ciphertext, token_iv, key_fingerprint
     )
     values (
       ${ROW_ID}, ${parsed.repoUrl}, ${parsed.owner}, ${parsed.repo},
-      ${input.branch}, ${targetDir}, ${input.basePath},
+      ${branch}, ${input.basePath},
       ${tokenCiphertext}, ${tokenIv}, ${keyFingerprint}
     )
     on conflict (id) do update
@@ -221,13 +221,12 @@ export async function upsertGithubPublishSettings(
           owner = excluded.owner,
           repo = excluded.repo,
           branch = excluded.branch,
-          target_dir = excluded.target_dir,
           base_path = excluded.base_path,
           token_ciphertext = excluded.token_ciphertext,
           token_iv = excluded.token_iv,
           key_fingerprint = excluded.key_fingerprint,
           updated_at = current_timestamp
-    returning repo_url, owner, repo, branch, target_dir, base_path,
+    returning repo_url, owner, repo, branch, base_path,
               token_ciphertext, token_iv, key_fingerprint, updated_at
   `
 

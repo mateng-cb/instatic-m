@@ -1,11 +1,7 @@
-import { apiRequest, type FetchLike } from '@core/http'
+import { apiBlobRequest, apiRequest, type FetchLike } from '@core/http'
 import {
-  GithubPublishJobResponseSchema,
   GithubPublishSettingsViewSchema,
-  StartGithubPublishResponseSchema,
-  type GithubPublishJobResponse,
   type GithubPublishSettingsView,
-  type StartGithubPublishResponse,
 } from './responseSchemas'
 
 export async function getGithubPublishSettings(
@@ -23,7 +19,6 @@ export async function putGithubPublishSettings(
   body: {
     repoUrl: string
     branch: string
-    targetDir: string
     basePath: string
     token?: string
   },
@@ -39,32 +34,20 @@ export async function putGithubPublishSettings(
   })
 }
 
-export async function getGithubPublishJob(
+/**
+ * Download the local push kit ZIP: the basePath-rewritten static export plus
+ * push scripts that publish it to GitHub from the operator's machine. The
+ * caller saves the Blob to disk.
+ */
+export async function downloadGithubPushKit(
+  options: { embedToken: boolean },
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
-): Promise<GithubPublishJobResponse> {
-  return apiRequest(`${basePath}/github-publish/progress`, {
-    schema: GithubPublishJobResponseSchema,
-    fetchImpl,
-    fallbackMessage: 'GitHub publish progress request failed',
-  })
-}
-
-export async function startGithubPublish(
-  body: {
-    branch?: string
-    targetDir?: string
-    basePath?: string
-    commitMessage?: string
-  } = {},
-  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
-  basePath = '/admin/api/cms',
-): Promise<StartGithubPublishResponse> {
-  return apiRequest(`${basePath}/publish-github`, {
+): Promise<Blob> {
+  return apiBlobRequest(`${basePath}/github-publish/push-package`, {
     method: 'POST',
-    body,
-    schema: StartGithubPublishResponseSchema,
+    body: options,
     fetchImpl,
-    fallbackMessage: 'Starting GitHub publish failed',
+    fallbackMessage: 'Push kit download failed',
   })
 }

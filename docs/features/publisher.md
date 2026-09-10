@@ -629,64 +629,66 @@ src/admin/pages/site/toolbar/PublishButton.tsx
 
 ---
 
-## GitHub publish (Phase B)
+## GitHub push kit (Phase B)
 
-Push the same static export tree to a GitHub branch for GitHub Pages. Requires a prior local Publish (same **409** / **422** gates as Phase A export). Operator setup: [docs/deployment/github-pages.md](../deployment/github-pages.md).
+GitHub Pages publishing ships as a **local push kit**: the server builds a ZIP (static export + push scripts), the editor downloads it and runs the script on their own machine, and the local `git` binary pushes the tree to GitHub. The server itself makes **zero GitHub API calls** — no cross-border per-file uploads, no background job, no polling. Requires a prior local Publish (same **409** / **422** gates as Phase A export). Operator setup: [docs/deployment/github-pages.md](../deployment/github-pages.md).
 
 ### Flow
 
 ```text
 Local Publish (Layer A snapshot)
-  → exportPublishedSiteStatic({ pathMode: 'basePath', layout: 'directory', basePath })
-  → gitDataApiPush (blobs → tree → commit → update ref)
+  → buildLocalPushKit (server/publish/localPushKit.ts)
+      ├─ exportPublishedSiteStatic({ pathMode: 'basePath', layout: 'directory', basePath }) → site/
+      ├─ site/.nojekyll (Pages' Jekyll build would drop every _instatic/ asset)
+      └─ push.cmd / push.sh / README.txt
+  → POST push-package streams the ZIP to the browser (synchronous download)
+  → editor runs push.cmd / push.sh locally: git init → commit → git push -f origin <branch>
 ```
 
 Phase B always exports the `directory` layout — GitHub Pages serves directory indexes (`x/` → `x/index.html`), so the flat option is not exposed here.
 
-The orchestrator is `publishSiteToGithub` in `server/publish/githubPublish.ts`. It does not change Layer A bake or the Bun-hosted public router.
+The script force-pushes a **fresh history every time** (full tree replace, no merge conflicts); the remote branch is auto-created if missing. If `embedToken` was chosen, the PAT rides inside the script's remote URL (`https://<token>@github.com/...`) for zero-interaction pushes — that ZIP is effectively a repo key; the dialog and README warn about it. The script removes the credential-bearing remote after the push.
 
 ### API
 
 | Method | Path | Notes |
 |--------|------|--------|
 | `GET` | `/admin/api/cms/github-publish/settings` | Wire-safe view; `pages.publish` |
-| `PUT` | `/admin/api/cms/github-publish/settings` | Upsert repo/branch/`targetDir`/`basePath`/PAT; `pages.publish` |
-| `GET` | `/admin/api/cms/github-publish/progress` | Job view — running progress or settled outcome (single-slot in-memory registry); `pages.publish` |
-| `POST` | `/admin/api/cms/publish-github` | Start the background job; optional body overrides (`branch`/`targetDir`/`basePath`/`commitMessage`); answers **202** `{ started: true, startedAt }` or **409** when a job is already running; `pages.publish` + step-up |
+| `PUT` | `/admin/api/cms/github-publish/settings` | Upsert repo/branch/`basePath`/PAT; `pages.publish` |
+| `POST` | `/admin/api/cms/github-publish/push-package` | Body `{ embedToken?: boolean }` (default `false`); answers **200** `application/zip` synchronously — there is no job and nothing to poll; `pages.publish` + step-up |
 
-Settings persist in `github_publish_settings` (encrypted PAT). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `startGithubPublish`, `getGithubPublishJob` in `src/core/persistence/cmsGithubPublish.ts`.
+| Status | Cause |
+|--------|-------|
+| `400` | Repository not configured / `embedToken` with no stored PAT / invalid settings |
+| `409` | Site has not been published yet |
+| `422` | Export aborted — per-visitor dynamic hole (same as Phase A) |
 
-The push runs as a **background job**, not inside the POST: a full-site Git Data API push takes minutes — longer than reverse-proxy response timeouts (Cloudflare cuts synchronous responses at ~100 s, which surfaced to editors as a 502 page). The job lives in the single-slot registry (`server/publish/githubPublishJobRegistry.ts`); the dialog polls the job endpoint (1 s interval) for live progress (`Uploading files 45/132 — path` / `Creating commit on GitHub…`) and settles on its outcome. The poller only settles on the job whose `startedAt` matches the 202 response (or the adopted job's) — the previous run's settled leftover view is never mistaken for this run's outcome, and a 409 ("already in progress") makes the dialog adopt the running job instead of dead-ending. A vanished job (`job: null` after a start) means the server restarted mid-run. Opening the dialog while a job runs adopts it — the form locks and shows the same progress.
+Settings persist in `github_publish_settings` (encrypted PAT; the legacy `target_dir` column remains in the schema but is no longer read or written — push kits always replace the whole branch tree). Client: `getGithubPublishSettings`, `putGithubPublishSettings`, `downloadGithubPushKit` in `src/core/persistence/cmsGithubPublish.ts`.
 
-The push uploads blobs **4 at a time**, each GitHub API request carrying a **60 s timeout** (`AbortSignal.timeout`), so a black-holed connection fails fast instead of hanging the job forever. Every push also writes a root `.nojekyll` blob — GitHub Pages' Jekyll build would otherwise drop every `_instatic/` asset.
-
-Job outcome on the progress endpoint: `state: 'succeeded'` with `result: { commitSha, repoUrl, branch, report }`, or `state: 'failed'` with `failure: { code, message }` (`not-published` / `per-visitor-hole` / `token-missing` / `config-incomplete` / `push-failed` / `internal`).
+Branch and repo identifiers are validated against strict allowlists (`[A-Za-z0-9._/-]` branches, token-shaped PATs) at both the settings layer and the kit builder — the values are interpolated into shell scripts, so injection-shaped input never reaches a script.
 
 ### Admin UI
 
-- **Publish menu → Publish to GitHub…** — `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` (via `PublishButton.tsx`)
-- **Settings → Publishing** — GitHub Pages block in `src/admin/modals/Settings/sections/PublishingSection.tsx` (defaults + token only; push from Publish menu)
+- **Publish menu → Publish to GitHub…** — `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` (via `PublishButton.tsx`): saves settings, chooses the embed-token option, downloads the ZIP
+- **Settings → Publishing** — GitHub Pages block in `src/admin/modals/Settings/sections/PublishingSection.tsx` (defaults + token only; download from Publish menu)
 
 ### Code map
 
 ```text
-server/publish/githubPublish.ts             — export then push orchestrator
-server/publish/githubPublishJob.ts          — background job runner (start + error mapping)
-server/publish/githubPublishJobRegistry.ts  — in-memory single-slot job registry
-server/github/gitDataApiPush.ts             — Git Data API (no local git)
-server/github/parseRepoUrl.ts               — repo URL → owner/repo
-server/repositories/githubPublishSettings.ts
-server/handlers/cms/githubPublish.ts
-src/core/persistence/cmsGithubPublish.ts
+server/publish/localPushKit.ts               — kit builder (export + scripts + README, error mapping)
+server/publish/staticArtefact.ts             — published-slot read (shared with Layer A)
+server/github/parseRepoUrl.ts                — repo URL → owner/repo
+server/repositories/githubPublishSettings.ts — settings + PAT encryption (branch allowlist)
+server/handlers/cms/githubPublish.ts         — settings + push-package routes
+src/core/persistence/cmsGithubPublish.ts     — client helpers (downloadGithubPushKit → Blob)
 ```
-
-Push uses `pathMode: 'basePath'` always. Target branch must exist on GitHub before push (no auto-create).
 
 ### Out of scope (phase B)
 
 - GitHub App tokens
 - Non-GitHub hosts
 - Auto-enable GitHub Pages via API
+- Server-side direct push (removed: the per-file Git Data API path was unusable on cross-border links — hundreds of sequential HTTPS requests with base64 inflation)
 
 ---
 
