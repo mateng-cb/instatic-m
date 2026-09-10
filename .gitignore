@@ -80,6 +80,9 @@ docs/superpowers/
 # Plugin build artifacts — generated from source plugin directories
 *.plugin.zip
 
+# DITE release bundles — built by scripts/build-dite-release.ts, never source
+dite-release-*/
+
 # Loose smoke-test screenshots dropped at the repo root by agent-browser runs.
 # Persisted captures belong under docs/ or marketing/assets/, not the root.
 /*.png

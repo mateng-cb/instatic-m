@@ -1,0 +1,29 @@
+# DITE 交付部署配置 — 与 instatic-dite.tar 配套使用。
+#
+# 镜像已内置 DITE 站点初始数据；首次 up 时 Docker 自动将其初始化进下方两个数据卷，
+# 之后站点的所有改动都落在数据卷里，更新镜像不影响数据。
+#
+# 用法（详见同目录 DEPLOY.md）：
+#   docker load -i instatic-dite.tar
+#   docker compose -f compose.dite.yml up -d
+name: instatic-dite
+
+services:
+  app:
+    image: instatic-dite:latest
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3001}:3001"
+    environment:
+      # 镜像内 SQLite 数据库（随镜像携带的 DITE 站点数据）。
+      DATABASE_URL: sqlite:/app/data/cms.db
+      # 必须与打包时一致，否则库内加密机密（GitHub 发布 PAT 等）无法解密。
+      # 随交付包的 .env 文件提供，compose 从同目录 .env 自动读取。
+      INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:?Set INSTATIC_SECRET_KEY from the shipped .env file}
+    volumes:
+      - data:/app/data
+      - uploads:/app/uploads
+
+volumes:
+  data:
+  uploads:
