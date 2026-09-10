@@ -116,7 +116,11 @@ export async function handleGithubPublishRoutes(
     if (!started) {
       return jsonResponse({ error: 'A GitHub publish is already in progress.' }, { status: 409 })
     }
-    return jsonResponse({ started: true }, { status: 202 })
+    // The registry slot now holds the freshly claimed running job; its
+    // startedAt lets the client's poller distinguish this run from the
+    // previous job's settled leftovers.
+    const job = getGithubPublishJob()
+    return jsonResponse({ started: true, startedAt: job?.startedAt ?? Date.now() }, { status: 202 })
   }
 
   return null

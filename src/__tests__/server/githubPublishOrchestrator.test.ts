@@ -112,6 +112,10 @@ describe('publishSiteToGithub orchestrator', () => {
     expect(caught).toBeInstanceOf(GithubPublishError)
     const error = caught as GithubPublishError
     expect(error.code).toBe('push-failed')
+    // The raw Git Data API failure text travels on the wire (the job's
+    // failureFor passes it through) — "Branch does not exist: …" and friends
+    // must reach the operator, not a generic "push failed".
+    expect(error.message).toBe('simulated push failure')
     expect(error.exportDir).toBe(capturedOutDir)
     expect(await pathExists(capturedOutDir)).toBe(true)
     leftoverDirs.push(capturedOutDir)

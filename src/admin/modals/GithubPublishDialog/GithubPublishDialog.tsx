@@ -19,6 +19,7 @@ import {
   startGithubPublish,
 } from '@core/persistence'
 import type { GithubPublishJob } from '@core/persistence'
+import { ApiError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { Dialog } from '@ui/components/Dialog'
@@ -149,6 +150,7 @@ async function startPublishFromForm(
   setError: (msg: string | null) => void,
   setHasToken: (v: boolean) => void,
   setJob: (job: GithubPublishJob | null) => void,
+  setMyStartedAt: (v: number | null) => void,
 ): Promise<void> {
   const repoUrl = values.repoUrl.trim()
   if (!repoUrl) {
@@ -185,11 +187,15 @@ async function startPublishFromForm(
   setBusy(true)
   setError(null)
   setJob(null)
+  // Cleared until the POST returns our job's identity — while null, the
+  // poller shows progress but never settles (the registry may still hold the
+  // PREVIOUS run's failed/succeeded view until our own job claims the slot).
+  setMyStartedAt(null)
   try {
     const saved = await putGithubPublishSettings(body)
     setHasToken(saved.hasToken)
 
-    await runStepUp(() =>
+    const res = await runStepUp(() =>
       startGithubPublish({
         branch,
         targetDir,
@@ -197,11 +203,25 @@ async function startPublishFromForm(
         ...(commitMessage ? { commitMessage } : {}),
       }),
     )
+    setMyStartedAt(res.startedAt)
     // Job accepted (202). The polling effect now drives progress + outcome.
   } catch (err) {
     if (err instanceof Error && err.message === StepUpCancelledMessage) {
       setBusy(false)
       return
+    }
+    // 409: a job is already running (this dialog or another tab started it).
+    // Adopt it — show its progress instead of a dead-end error.
+    if (err instanceof ApiError && err.status === 409) {
+      try {
+        const running = await getGithubPublishJob()
+        if (running.job?.state === 'running') {
+          setMyStartedAt(running.job.startedAt)
+          return // stay busy; the polling effect takes over
+        }
+      } catch (_adoptErr) {
+        // Best-effort adoption; fall through to the plain error below.
+      }
     }
     console.error('[GithubPublishDialog]', err)
     const message = getErrorMessage(err, 'GitHub publish failed')
@@ -224,6 +244,9 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [job, setJob] = useState<GithubPublishJob | null>(null)
+  /** Identity (startedAt) of the job this dialog session tracks; null while
+   * our own POST is still in flight — then the poller must not settle. */
+  const [myStartedAt, setMyStartedAt] = useState<number | null>(null)
 
   const [repoUrl, setRepoUrl] = useState('')
   const [branch, setBranch] = useState(DEFAULT_BRANCH)
@@ -261,7 +284,10 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
     // was reopened mid-run) so the dialog shows its progress and outcome too.
     void getGithubPublishJob()
       .then((res) => {
-        if (!cancelled && res.job?.state === 'running') setBusy(true)
+        if (!cancelled && res.job?.state === 'running') {
+          setMyStartedAt(res.job.startedAt)
+          setBusy(true)
+        }
       })
       .catch((_err) => {
         // Best-effort adoption; a failure here never blocks a new publish.
@@ -295,9 +321,19 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
           if (current === null) {
             settle(() => {
               setBusy(false)
+              setMyStartedAt(null)
               setError('The publish job was interrupted — the server restarted while it was running.')
               toastPublishFailure('Publish interrupted (server restarted)')
             })
+            return
+          }
+          // Only OUR job settles this dialog. A settled view with a different
+          // startedAt is the previous run's leftover (ours hasn't claimed the
+          // slot yet — e.g. the POST is still behind step-up); a running view
+          // with a different startedAt is someone else's job. Show progress
+          // for the latter, never settle on either.
+          if (myStartedAt !== null && current.startedAt !== myStartedAt) {
+            if (current.state === 'running') setJob(current)
             return
           }
           setJob(current)
@@ -305,6 +341,7 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
             const result = current.result
             settle(() => {
               setBusy(false)
+              setMyStartedAt(null)
               toastPublishSuccess(result)
               onClose()
             })
@@ -312,6 +349,7 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
             settle(() => {
               const message = current.failure?.message ?? 'GitHub publish failed'
               setBusy(false)
+              setMyStartedAt(null)
               setError(message)
               toastPublishFailure(message)
             })
@@ -329,7 +367,7 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
       cancelled = true
       clearInterval(interval)
     }
-  }, [busy, onClose])
+  }, [busy, myStartedAt, onClose])
 
   async function handlePublish() {
     await startPublishFromForm(
@@ -339,6 +377,7 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
       setError,
       setHasToken,
       setJob,
+      setMyStartedAt,
     )
   }
 

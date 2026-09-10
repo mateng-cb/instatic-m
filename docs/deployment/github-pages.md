@@ -164,7 +164,7 @@ If push fails after a successful export, the server keeps the temp export direct
 
 Handler: `server/handlers/cms/githubPublish.ts`. Client helpers: `src/core/persistence/cmsGithubPublish.ts`.
 
-`POST /publish-github` starts the job and answers **202** `{ started: true }` immediately — the push itself runs in the background and its outcome arrives on the progress endpoint (`job.state: 'succeeded'` with `result: { commitSha, repoUrl, branch, report }`, or `'failed'` with `failure`).
+`POST /publish-github` starts the job and answers **202** `{ started: true, startedAt }` immediately — the push itself runs in the background and its outcome arrives on the progress endpoint (`job.state: 'succeeded'` with `result: { commitSha, repoUrl, branch, report }`, or `'failed'` with `failure`). `startedAt` identifies the freshly claimed job: the dialog's poller only settles on a job whose `startedAt` matches, so the previous run's settled leftover view never masquerades as this run's outcome.
 
 | Status | Cause |
 |---|---|
@@ -178,7 +178,7 @@ Job `failure.code` values (surfaced by the dialog as the failure message):
 | `not-published` | Site not published locally |
 | `per-visitor-hole` | Per-visitor dynamic hole — same as static export |
 | `token-missing` / `config-incomplete` | Missing token or incomplete repo config |
-| `push-failed` | GitHub push failed (export dir kept on server) |
+| `push-failed` | GitHub push failed — the message is the raw Git Data API failure (e.g. `Branch does not exist: gh-pages. Create the branch on GitHub before publishing.`); the export dir is kept on the server |
 | `internal` | Unexpected server error |
 
 ---
