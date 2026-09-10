@@ -1,6 +1,7 @@
 import { Button } from '@ui/components/Button'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
+import { repoDocsUrl } from '@admin/lib/repoLinks'
 import { PluginCard } from './components/PluginCard/PluginCard'
 import { PluginRemoveDialog } from './components/PluginRemoveDialog/PluginRemoveDialog'
 import { PermissionReviewSection } from './components/PermissionReviewSection'
@@ -79,7 +80,7 @@ export function PluginsPage() {
               <p className={styles.errorHint}>
                 This looks like a plugin sandbox issue. See the{' '}
                 <a
-                  href="http://192.168.3.106:8881/instatic/instatic-dite/-/blob/main/docs/features/plugin-system.md"
+                  href={repoDocsUrl('features/plugin-system.md')}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

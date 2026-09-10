@@ -8,6 +8,7 @@
  * - Copy environment info (for bug reports)
  */
 
+import { REPO_DOCS_URL, REPO_NEW_ISSUE_URL, REPO_URL } from '../../lib/repoLinks'
 import type { Command } from '../types'
 
 export function getHelpCommands(): Command[] {
@@ -37,7 +38,7 @@ export function getHelpCommands(): Command[] {
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
-        window.open('http://192.168.3.106:8881/instatic/instatic-dite/-/blob/main/docs/', '_blank', 'noopener,noreferrer')
+        window.open(REPO_DOCS_URL, '_blank', 'noopener,noreferrer')
       },
     },
 
@@ -51,7 +52,7 @@ export function getHelpCommands(): Command[] {
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
-        window.open('http://192.168.3.106:8881/instatic/instatic-dite/-/issues/new', '_blank', 'noopener,noreferrer')
+        window.open(REPO_NEW_ISSUE_URL, '_blank', 'noopener,noreferrer')
       },
     },
 
@@ -66,7 +67,7 @@ export function getHelpCommands(): Command[] {
       run: (ctx) => {
         ctx.closeSpotlight()
         // Navigate to About section in settings when available, else open docs
-        window.open('http://192.168.3.106:8881/instatic/instatic-dite', '_blank', 'noopener,noreferrer')
+        window.open(REPO_URL, '_blank', 'noopener,noreferrer')
       },
     },
 
