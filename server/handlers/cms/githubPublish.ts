@@ -42,6 +42,8 @@ const PutSettingsSchema = Type.Object({
   repoUrl: Type.String({ minLength: 1 }),
   branch: Type.String({ minLength: 1 }),
   basePath: Type.String(),
+  /** Absolute server path of the persistent git working clone; omit = keep, '' = default. */
+  workdir: Type.Optional(Type.String()),
   token: Type.Optional(Type.String()),
 })
 

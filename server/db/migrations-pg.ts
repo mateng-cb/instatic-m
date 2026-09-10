@@ -1208,4 +1208,11 @@ export const pgMigrations: Migration[] = [
       );
     `,
   },
+  {
+    id: '028_github_publish_workdir',
+    sql: `
+      alter table github_publish_settings
+        add column workdir text not null default '';
+    `,
+  },
 ]

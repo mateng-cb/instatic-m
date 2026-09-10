@@ -410,6 +410,8 @@ export const GithubPublishSettingsViewSchema = Type.Object({
   repo: Type.String(),
   branch: Type.String(),
   basePath: Type.String(),
+  /** Server-side persistent git working clone; '' = server default. */
+  workdir: Type.String(),
   hasToken: Type.Boolean(),
   keyFingerprintCurrent: Type.Boolean(),
   updatedAt: Type.Union([Type.String(), Type.Null()]),

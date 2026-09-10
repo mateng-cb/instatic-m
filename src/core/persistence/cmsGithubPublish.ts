@@ -20,6 +20,8 @@ export async function putGithubPublishSettings(
     repoUrl: string
     branch: string
     basePath: string
+    /** omit = keep existing; '' = clear back to the server default */
+    workdir?: string
     token?: string
   },
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),

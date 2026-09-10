@@ -2,8 +2,8 @@
  * PublishingSection — self-hosted CMS publishing details + GitHub Pages defaults.
  *
  * The GitHub Pages block only persists settings/token via
- * `putGithubPublishSettings`. Downloading the push kit runs from the Site
- * editor Publish menu 「Publish to GitHub…」.
+ * `putGithubPublishSettings`. Pushing runs from the Site editor Publish menu
+ * 「Publish to GitHub…」.
  */
 import { useEffect, useId, useState } from 'react'
 import { useSiteSettingsController } from '../useSiteSettingsController'
@@ -25,7 +25,9 @@ const DEFAULT_BRANCH = 'gh-pages'
 interface GithubFormValues {
   repoUrl: string
   branch: string
+  targetDir: string
   basePath: string
+  workdir: string
   token: string
   hasToken: boolean
   clearToken: boolean
@@ -42,7 +44,9 @@ async function loadGithubSettings(
   apply: (values: {
     repoUrl: string
     branch: string
+    targetDir: string
     basePath: string
+    workdir: string
     hasToken: boolean
   }) => void,
 ): Promise<void> {
@@ -53,7 +57,9 @@ async function loadGithubSettings(
     apply({
       repoUrl: settings.repoUrl,
       branch: settings.branch || DEFAULT_BRANCH,
+      targetDir: settings.targetDir,
       basePath: settings.basePath,
+      workdir: settings.workdir,
       hasToken: settings.hasToken,
     })
   } catch (err) {
@@ -73,15 +79,19 @@ async function saveGithubSettings(
 ): Promise<void> {
   const repoUrl = values.repoUrl.trim()
   const branch = values.branch.trim() || DEFAULT_BRANCH
+  const targetDir = values.targetDir.trim()
   const basePath = values.basePath.trim()
+  const workdir = values.workdir.trim()
   const token = values.token.trim()
 
   const body: {
     repoUrl: string
     branch: string
+    targetDir: string
     basePath: string
+    workdir: string
     token?: string
-  } = { repoUrl, branch, basePath }
+  } = { repoUrl, branch, targetDir, basePath, workdir }
 
   // Omit token to keep; '' to clear; non-empty to rotate.
   if (values.clearToken) {
@@ -193,7 +203,9 @@ export function PublishingSection() {
 function GithubPagesBlock() {
   const repoUrlId = useId()
   const branchId = useId()
+  const targetDirId = useId()
   const basePathId = useId()
+  const workdirId = useId()
   const tokenId = useId()
 
   const [loading, setLoading] = useState(true)
@@ -202,7 +214,9 @@ function GithubPagesBlock() {
 
   const [repoUrl, setRepoUrl] = useState('')
   const [branch, setBranch] = useState(DEFAULT_BRANCH)
+  const [targetDir, setTargetDir] = useState('')
   const [basePath, setBasePath] = useState('')
+  const [workdir, setWorkdir] = useState('')
   const [token, setToken] = useState('')
   const [hasToken, setHasToken] = useState(false)
   const [clearToken, setClearToken] = useState(false)
@@ -221,7 +235,9 @@ function GithubPagesBlock() {
         if (cancelled) return
         setRepoUrl(values.repoUrl)
         setBranch(values.branch)
+        setTargetDir(values.targetDir)
         setBasePath(values.basePath)
+        setWorkdir(values.workdir)
         setHasToken(values.hasToken)
         setToken('')
         setClearToken(false)
@@ -240,7 +256,7 @@ function GithubPagesBlock() {
 
   function handleSave() {
     void saveGithubSettings(
-      { repoUrl, branch, basePath, token, hasToken, clearToken },
+      { repoUrl, branch, targetDir, basePath, workdir, token, hasToken, clearToken },
       setSaving,
       setHasToken,
       setClearToken,
@@ -264,9 +280,8 @@ function GithubPagesBlock() {
         GitHub Pages
       </h4>
       <p className={s.preferenceCategoryDesc}>
-        Store repository defaults and a personal access token here. Downloading the push kit (the
-        static export + scripts that publish it to GitHub from your machine) happens from the
-        Publish menu 「Publish to GitHub…」 — this block only saves settings.
+        Store repository defaults and a personal access token here. Pushing the static export
+        happens from the Publish menu 「Publish to GitHub…」 — this block only saves settings.
       </p>
 
       {loading ? (
@@ -310,6 +325,22 @@ function GithubPagesBlock() {
           </div>
 
           <div className={s.genFieldRow}>
+            <label htmlFor={targetDirId} className={s.label}>
+              Target directory
+            </label>
+            <Input
+              id={targetDirId}
+              type="text"
+              value={targetDir}
+              onChange={(event) => setTargetDir(event.target.value)}
+              placeholder="docs (empty = branch root)"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={saving}
+            />
+          </div>
+
+          <div className={s.genFieldRow}>
             <label htmlFor={basePathId} className={s.label}>
               Base path
             </label>
@@ -326,6 +357,27 @@ function GithubPagesBlock() {
             <p className={s.pubFieldHint}>
               Project Pages usually need /repo-name; user/org sites and apex custom domains use
               empty.
+            </p>
+          </div>
+
+          <div className={s.genFieldRow}>
+            <label htmlFor={workdirId} className={s.label}>
+              Git working directory
+            </label>
+            <Input
+              id={workdirId}
+              type="text"
+              value={workdir}
+              onChange={(event) => setWorkdir(event.target.value)}
+              placeholder="/app/github-publish-workdir (empty = automatic)"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={saving}
+            />
+            <p className={s.pubFieldHint}>
+              Persistent clone used to commit and push the export. Map this path to a host volume
+              in docker-compose so the clone survives rebuilds and stays available for manual
+              inspection or pushes.
             </p>
           </div>
 
