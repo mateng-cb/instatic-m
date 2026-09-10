@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Merge a .worktrees/ branch into main and push. Keeps the worktree for
+# confirmation by default; pass --clean to remove it and its branch.
+# Usage: scripts/worktree-finish [--clean] <short-name>
+# Example: scripts/worktree-finish double-click-rename
+set -euo pipefail
+
+clean=false
+if [[ "${1:-}" == "--clean" ]]; then
+  clean=true
+  shift
+fi
+
+name="${1:?Usage: scripts/worktree-finish [--clean] <short-name>}"
+dir=".worktrees/${name}"
+
+if [[ ! -d "$dir" ]]; then
+  echo "error: worktree '$dir' not found" >&2
+  exit 1
+fi
+if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then
+  echo "error: worktree has uncommitted changes; commit or stash them first" >&2
+  exit 1
+fi
+
+branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+git fetch origin main
+git switch main
+git merge --ff-only origin/main >/dev/null 2>&1 || true
+git merge --no-ff "$branch" -m "Merge branch '$branch' into main"
+git push origin main
+echo "merged '$branch' into main and pushed"
+
+if $clean; then
+  git worktree remove "$dir"
+  git branch -d "$branch"
+  echo "removed worktree '$dir' and branch '$branch'"
+else
+  echo "kept worktree '$dir' and branch '$branch' (remove later with:"
+  echo "  git worktree remove $dir && git branch -d $branch)"
+fi
