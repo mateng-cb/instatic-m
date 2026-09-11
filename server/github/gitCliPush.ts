@@ -84,12 +84,13 @@ function neutralRemote(input: GitPushInput): string {
 }
 
 /**
- * Clone from the neutral URL (no credential in .git/config), then push to the
- * tokened URL per publish. Both must see the same repo, so `workspaceMatches`
- * can compare the stored remote against `neutralRemote` to detect a
- * repo/branch switch in settings.
+ * Clone with the tokened URL (private repos 404 on an anonymous clone), then
+ * rewrite origin to the neutral URL so no credential persists in .git/config.
+ * Pushes go to the tokened URL per publish. Both must see the same repo, so
+ * `workspaceMatches` can compare the stored remote against `neutralRemote` to
+ * detect a repo/branch switch in settings.
  */
-async function cloneWorkspace(input: GitPushInput, url: string, timeoutMs: number): Promise<void> {
+async function cloneWorkspace(input: GitPushInput, neutralUrl: string, timeoutMs: number): Promise<void> {
   await rm(input.workDir, { recursive: true, force: true })
   await mkdir(join(input.workDir, '..'), { recursive: true })
   // Language-independent branch existence check: localized git error text
@@ -104,9 +105,12 @@ async function cloneWorkspace(input: GitPushInput, url: string, timeoutMs: numbe
   }
   try {
     await runGit(
-      ['clone', '--depth', '1', '--no-tags', '--branch', input.branch, url, input.workDir],
+      ['clone', '--depth', '1', '--no-tags', '--branch', input.branch, remoteUrl(input), input.workDir],
       { timeoutMs, token: input.token },
     )
+    await runGit(['remote', 'set-url', 'origin', neutralUrl], {
+      timeoutMs, cwd: input.workDir,
+    })
   } catch (err) {
     await rm(input.workDir, { recursive: true, force: true })
     throw err
