@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 # Merge a .worktrees/ branch into main and push. Keeps the worktree for
 # confirmation by default; pass --clean to remove it and its branch.
-# Usage: scripts/worktree-finish [--clean] <short-name>
+# Usage: scripts/worktree-finish [--clean] [--no-ticket "<reason>"] <short-name>
 # Example: scripts/worktree-finish double-click-rename
 set -euo pipefail
 
 clean=false
-if [[ "${1:-}" == "--clean" ]]; then
-  clean=true
-  shift
-fi
+no_ticket_reason=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --clean)
+      clean=true
+      shift
+      ;;
+    --no-ticket)
+      [[ -n "${2:-}" ]] || { echo "error: --no-ticket requires a reason" >&2; exit 1; }
+      no_ticket_reason="$2"
+      shift 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
-name="${1:?Usage: scripts/worktree-finish [--clean] <short-name>}"
+name="${1:?Usage: scripts/worktree-finish [--clean] [--no-ticket \"<reason>\"] <short-name>}"
 dir=".worktrees/${name}"
 
 if [[ ! -d "$dir" ]]; then
@@ -24,6 +37,25 @@ if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then
 fi
 
 branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+
+# Workflow gate: no ticket, no merge. A ticket is a GitLab issue reference
+# (#<iid> or an issue URL) in any branch commit, or a local ticket file under
+# .scratch/<short-name>/issues/. See AGENTS.md → "Workflow gates".
+if [[ -z "$no_ticket_reason" ]]; then
+  if git log --format=%B "main..${branch}" | grep -Eq '(^|[^A-Za-z])#[0-9]+|instatic-dite/issues/[0-9]+'; then
+    echo "ticket check: ok (issue referenced in commit messages)"
+  elif [[ -d ".scratch/${name}/issues" ]] && find ".scratch/${name}/issues" -maxdepth 1 -type f | grep -q .; then
+    echo "ticket check: ok (.scratch/${name}/issues/)"
+  else
+    echo "error: no ticket found for '$branch'." >&2
+    echo "  Reference a GitLab issue as #<iid> in a commit message, add a ticket" >&2
+    echo "  file under .scratch/${name}/issues/, or (rare cases only) pass" >&2
+    echo "  --no-ticket \"<reason>\". See AGENTS.md → Workflow gates." >&2
+    exit 1
+  fi
+else
+  echo "ticket check: SKIPPED (--no-ticket: ${no_ticket_reason})"
+fi
 git fetch origin main
 git switch main
 git merge --ff-only origin/main >/dev/null 2>&1 || true

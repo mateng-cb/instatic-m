@@ -23,6 +23,14 @@ When publishing work:
 - **Do not delete a worktree or its branch on your own after merging** — keep it until the user explicitly confirms the work is accepted, then remove it with `git worktree remove .worktrees/<short-name>` and `git branch -d <branch>`.
 - Commit messages use Conventional Commit style: `<type>(<scope>): <summary>`. Do not prefix with tool labels such as `[codex]`, `[claude]`, or `agent:`.
 
+### Workflow gates
+
+Rules above are enforced mechanically at the merge gate, not left to discipline:
+
+- **No ticket, no merge.** Every change must be traceable to a ticket: a GitLab issue (`glab issue list`) referenced as `#<iid>` or an issue URL in any commit message on the branch, or a local ticket file under `.scratch/<short-name>/issues/`. `scripts/worktree-finish` fails without one.
+- If work genuinely cannot carry a ticket (rare: a revert of a broken push, a CI-hotfix), pass `--no-ticket "<reason>"` to `worktree-finish` — the reason is printed into the merge record. Do not reach for this by default; open the ticket retroactively instead (`glab issue create` + close with the merge reference takes under a minute).
+- **No working in the primary checkout.** Untracked directories and edits appearing next to `main` are drift; move them into a worktree before publishing.
+
 ---
 
 ## What this project is
