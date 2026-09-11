@@ -174,7 +174,11 @@ async function resolveTokenFields(
     }
   }
 
-  if (token === '') {
+  // Pasted PATs frequently arrive with trailing newlines/spaces from the
+  // clipboard — any of them silently breaks git basic auth downstream.
+  const trimmedToken = token.trim()
+
+  if (trimmedToken === '') {
     return {
       tokenCiphertext: null,
       tokenIv: null,
@@ -184,7 +188,7 @@ async function resolveTokenFields(
 
   try {
     const masterKey = await loadMasterKey()
-    const { ciphertext, iv } = await encryptSecret(masterKey, token)
+    const { ciphertext, iv } = await encryptSecret(masterKey, trimmedToken)
     return {
       tokenCiphertext: ciphertext,
       tokenIv: iv,
@@ -219,6 +223,8 @@ export async function upsertGithubPublishSettings(
   const workdir = input.workdir === undefined
     ? (await readRow(db))?.workdir ?? ''
     : input.workdir.trim()
+  const branch = input.branch.trim()
+  const basePath = input.basePath.trim()
   const { tokenCiphertext, tokenIv, keyFingerprint } = await resolveTokenFields(db, input.token)
 
   const { rows } = await db<GithubPublishSettingsRow>`
@@ -228,7 +234,7 @@ export async function upsertGithubPublishSettings(
     )
     values (
       ${ROW_ID}, ${parsed.repoUrl}, ${parsed.owner}, ${parsed.repo},
-      ${input.branch}, ${targetDir}, ${input.basePath}, ${workdir},
+      ${branch}, ${targetDir}, ${basePath}, ${workdir},
       ${tokenCiphertext}, ${tokenIv}, ${keyFingerprint}
     )
     on conflict (id) do update
