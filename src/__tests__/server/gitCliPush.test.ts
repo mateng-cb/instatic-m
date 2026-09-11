@@ -210,4 +210,40 @@ describe('gitCliPush', () => {
     expect(events.at(-1)?.phase).toBe('finalizing')
     expect(events.at(-1)?.uploaded).toBe(1)
   }, 20_000)
+
+  // Regression: mkdir(join(workDir, '..')) degraded to mkdir('.') for a
+  // single-segment relative workDir, which throws EEXIST on Bun/Windows —
+  // every other test uses mkdtemp absolute paths and never saw it.
+  test('single-segment relative workDir: bootstrap succeeds (no mkdir EEXIST)', async () => {
+    const bare = await makeBareRemote('gh-pages')
+    const exportDir = await makeTempDir('instatic-gh-git-export-')
+    await writeFile(join(exportDir, 'index.html'), '<html>rel</html>')
+
+    const prevCwd = process.cwd()
+    const cwd = await makeTempDir('instatic-gh-git-cwd-')
+    process.chdir(cwd)
+    try {
+      const result = await gitCliPush(
+        pushInput({ exportDir, workDir: 'rel-workdir', remoteBaseUrl: bare }),
+      )
+      expect(result.commitSha).toMatch(/^[0-9a-f]{40}$/)
+    } finally {
+      process.chdir(prevCwd)
+    }
+
+    expect(await bareFileList(bare, 'gh-pages')).toEqual(['.nojekyll', 'index.html'])
+  }, 20_000)
+
+  // A killed command (Bun.spawn timeout → SIGTERM) must say so — git's last
+  // stderr line ("fatal: early EOF") alone reads like a network fault.
+  test('timeout-killed git command is reported as a command timeout', async () => {
+    const bare = await makeBareRemote('gh-pages')
+    const exportDir = await makeTempDir('instatic-gh-git-export-')
+    await writeFile(join(exportDir, 'index.html'), 'x')
+    const workDir = await makeTempDir('instatic-gh-git-work-')
+
+    await expect(
+      gitCliPush(pushInput({ exportDir, workDir, remoteBaseUrl: bare, commandTimeoutMs: 50 })),
+    ).rejects.toThrow(/exceeding the 50ms command timeout/)
+  }, 20_000)
 })

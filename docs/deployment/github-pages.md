@@ -61,6 +61,8 @@ Create a PAT on GitHub with write access to repository contents:
 
 Instatic pushes with the **real git CLI** (`server/github/gitCliPush.ts`) over HTTPS — no REST API calls, so no 5,000 req/h quota and no per-file uploads; git negotiates an incremental pack. The token authenticates the clone/push remote URL, is scrubbed from all git error output, and is never written to the export tree. The Docker image installs `git` for this. The push runs as a **background job** (a full-site push takes minutes — longer than reverse-proxy timeouts such as Cloudflare's ~100 s synchronous limit), and the publish dialog polls `GET /admin/api/cms/github-publish/progress` (1 s interval) for per-file upload progress (`Uploading files 45/132 — path`) and the final outcome.
 
+Each git command runs under a timeout: **120 s** for short ones (`status`, `add`, `ls-remote`, …) and **10 min** for `clone`/`push` — a real shallow clone of a mature site repo takes minutes on a slow link. A command killed by the timeout reports `killed after exceeding the … command timeout`, distinguishing it from genuine network failures (`fatal: early EOF` without the timeout note). The working directory may be absolute or relative to the server CWD; empty in settings means a default directory beside the uploads volume.
+
 Every push writes a root **`.nojekyll`** marker into the target tree. GitHub Pages runs Jekyll by default and Jekyll silently drops `_`-prefixed paths — all Instatic assets live under `_instatic/`, so without the marker every stylesheet and runtime script would 404 on Pages.
 
 **Token rotation in admin:** omit `token` on PUT → keep existing; empty string → clear; non-empty string → replace.
