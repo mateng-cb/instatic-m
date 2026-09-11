@@ -111,6 +111,22 @@ describe('github publish settings repository', () => {
     expect(await decryptGithubPublishToken(testDb.db)).toBe(TEST_TOKEN)
   })
 
+  it('trims whitespace pasted around the token and other settings strings', async () => {
+    await upsertGithubPublishSettings(testDb.db, {
+      workdir: '',
+      repoUrl: TEST_REPO,
+      branch: '  gh-pages\n',
+      targetDir: 'docs',
+      basePath: ' /my-site ',
+      token: `  ${TEST_TOKEN}\n`,
+    })
+    const decrypted = await decryptGithubPublishToken(testDb.db)
+    expect(decrypted).toBe(TEST_TOKEN)
+    const view = await getGithubPublishSettingsView(testDb.db)
+    expect(view.branch).toBe('gh-pages')
+    expect(view.basePath).toBe('/my-site')
+  })
+
   it("clears the token when upsert receives token: ''", async () => {
     await upsertGithubPublishSettings(testDb.db, {
       workdir: '',
