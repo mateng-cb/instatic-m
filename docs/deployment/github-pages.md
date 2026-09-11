@@ -106,7 +106,7 @@ Two entry points share the same persisted row (`github_publish_settings`, single
 | Location | Purpose |
 |---|---|
 | **Settings → Publishing** → GitHub Pages block | Save defaults and PAT (`putGithubPublishSettings`). Does not push. |
-| **Site editor → Publish menu → Publish to GitHub…** | `GithubPublishDialog` — loads settings, saves on submit, starts the push job, polls until it settles (adopting an already-running job if the dialog opens mid-push) |
+| **Site editor → Publish menu → Publish to GitHub…** | `GithubPublishDialog` — confirm-and-track only: shows the stored repo / branch / token read-only (jump to Settings when unconfigured), starts the push job with the stored settings (saves nothing); reopening mid-push adopts the running job. Configuration lives only in Settings → Publishing (see [ADR-0005](../adr/0005-publish-dialog-confirms-not-configures.md)) |
 
 Fields:
 

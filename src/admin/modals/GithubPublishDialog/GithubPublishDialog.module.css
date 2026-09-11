@@ -1,13 +1,14 @@
-.form {
+.summary {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
+  gap: var(--space-s);
 }
 
-.field {
+.row {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-s);
 }
 
 .label {
@@ -18,6 +19,13 @@
   line-height: 1.2;
 }
 
+.value {
+  color: var(--text-default);
+  font-size: var(--text-s);
+  line-height: 1.3;
+  word-break: break-all;
+}
+
 .hint {
   margin: 0;
   color: var(--text-subtle);
@@ -25,30 +33,17 @@
   line-height: 1.3;
 }
 
-.tokenMeta {
+.progressView {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-s);
 }
 
-.tokenStatus {
+.progress {
   margin: 0;
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
-  line-height: 1.3;
-}
-
-.embedRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-s);
-}
-
-.embedLabel {
   color: var(--text-default);
   font-size: var(--text-s);
-  line-height: 1.2;
+  line-height: 1.3;
 }
 
 .error {
@@ -56,4 +51,11 @@
   color: var(--danger);
   font-size: var(--text-s);
   line-height: 1.3;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-s);
+  margin-top: var(--space-m);
 }

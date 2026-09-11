@@ -1,37 +1,36 @@
 /**
- * GithubPublishDialog — configure GitHub Pages target + PAT, then start the
- * static-export + Git Data API push as a background job (step-up gated).
+ * GithubPublishDialog — confirm-and-track dialog for the GitHub Pages push.
  *
- * Opened from the Site editor Publish menu. Settings are loaded on open and
- * persisted with `putGithubPublishSettings` before the push so one Publish
- * click both saves defaults and ships.
+ * Configuration lives in Settings → Publishing (PublishingSection). Opening
+ * this dialog loads the stored settings read-only: the confirm view shows the
+ * target repo / branch / token status — with a jump to Settings when
+ * unconfigured — and Publish starts the export + push job (step-up gated)
+ * using the stored settings. The dialog saves nothing.
  *
  * The publish POST returns 202 immediately (a full-site push runs minutes —
  * longer than reverse-proxy timeouts), so the dialog polls the job endpoint
  * until it settles and toasts the outcome. Opening the dialog while a job is
- * running adopts it: the form locks and shows the same live progress.
+ * running skips the confirm view and shows live progress. Closing mid-run is
+ * allowed — the job continues server-side, its outcome arrives via toast, and
+ * reopening adopts the running job again.
  */
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   getGithubPublishJob,
   getGithubPublishSettings,
-  putGithubPublishSettings,
   startGithubPublish,
 } from '@core/persistence'
 import type { GithubPublishJob } from '@core/persistence'
 import { ApiError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { useAdminUi } from '@admin/state/adminUi'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { Dialog } from '@ui/components/Dialog'
 import { Button } from '@ui/components/Button'
-import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import styles from './GithubPublishDialog.module.css'
 
-const FORM_ID = 'github-publish-form'
 const DEFAULT_BRANCH = 'gh-pages'
-/** Mirrors the server-side default in server/github/gitCliPush.ts. */
-const DEFAULT_COMMIT_MESSAGE = 'Publish site from Instatic'
 /** Poll cadence for the background job; the push itself is minutes-long. */
 const JOB_POLL_INTERVAL_MS = 1000
 
@@ -40,15 +39,11 @@ interface GithubPublishDialogProps {
   onClose: () => void
 }
 
-interface PublishFormValues {
+/** Read-only slice of the stored GitHub publish settings this dialog shows. */
+interface SettingsView {
   repoUrl: string
   branch: string
-  targetDir: string
-  basePath: string
-  commitMessage: string
-  token: string
   hasToken: boolean
-  clearToken: boolean
 }
 
 type PublishResult = NonNullable<GithubPublishJob['result']>
@@ -111,13 +106,7 @@ function toastPublishFailure(message: string): void {
 async function loadSettings(
   setLoading: (v: boolean) => void,
   setError: (msg: string | null) => void,
-  apply: (values: {
-    repoUrl: string
-    branch: string
-    targetDir: string
-    basePath: string
-    hasToken: boolean
-  }) => void,
+  apply: (values: SettingsView) => void,
 ): Promise<void> {
   setLoading(true)
   setError(null)
@@ -126,8 +115,6 @@ async function loadSettings(
     apply({
       repoUrl: settings.repoUrl,
       branch: settings.branch || DEFAULT_BRANCH,
-      targetDir: settings.targetDir,
-      basePath: settings.basePath,
       hasToken: settings.hasToken,
     })
   } catch (err) {
@@ -139,70 +126,25 @@ async function loadSettings(
 }
 
 /**
- * Validate the form, persist settings, start the background job (step-up
- * gated). The job's outcome arrives via the polling effect — this only
- * switches the dialog into its running state.
+ * Start the background job (step-up gated) using the stored settings — no
+ * body overrides; the server falls back to them. The job's outcome arrives
+ * via the polling effect; this only switches the dialog into its running
+ * state.
  */
-async function startPublishFromForm(
-  values: PublishFormValues,
+async function startPublish(
   runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
   setBusy: (v: boolean) => void,
   setError: (msg: string | null) => void,
-  setHasToken: (v: boolean) => void,
-  setJob: (job: GithubPublishJob | null) => void,
   setMyStartedAt: (v: number | null) => void,
 ): Promise<void> {
-  const repoUrl = values.repoUrl.trim()
-  if (!repoUrl) {
-    setError('Repository URL is required.')
-    return
-  }
-
-  const token = values.token.trim()
-  // Need a PAT when none is stored yet, or when the user opted to clear the saved one.
-  if ((!values.hasToken || values.clearToken) && !token) {
-    setError('A personal access token is required.')
-    return
-  }
-
-  const branch = values.branch.trim() || DEFAULT_BRANCH
-  const targetDir = values.targetDir.trim()
-  const basePath = values.basePath.trim()
-  const commitMessage = values.commitMessage.trim()
-
-  const body: {
-    repoUrl: string
-    branch: string
-    targetDir: string
-    basePath: string
-    token?: string
-  } = { repoUrl, branch, targetDir, basePath }
-
-  if (values.clearToken) {
-    body.token = ''
-  } else if (token) {
-    body.token = token
-  }
-
   setBusy(true)
   setError(null)
-  setJob(null)
   // Cleared until the POST returns our job's identity — while null, the
   // poller shows progress but never settles (the registry may still hold the
   // PREVIOUS run's failed/succeeded view until our own job claims the slot).
   setMyStartedAt(null)
   try {
-    const saved = await putGithubPublishSettings(body)
-    setHasToken(saved.hasToken)
-
-    const res = await runStepUp(() =>
-      startGithubPublish({
-        branch,
-        targetDir,
-        basePath,
-        ...(commitMessage ? { commitMessage } : {}),
-      }),
-    )
+    const res = await runStepUp(() => startGithubPublish())
     setMyStartedAt(res.startedAt)
     // Job accepted (202). The polling effect now drives progress + outcome.
   } catch (err) {
@@ -231,14 +173,14 @@ async function startPublishFromForm(
   }
 }
 
+/** Missing repository or token blocks a publish; the fix lives in Settings. */
+function isUnconfigured(settings: SettingsView): boolean {
+  return !settings.repoUrl || !settings.hasToken
+}
+
 export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps) {
   const { runStepUp } = useStepUp()
-  const repoUrlId = useId()
-  const branchId = useId()
-  const targetDirId = useId()
-  const basePathId = useId()
-  const commitMessageId = useId()
-  const tokenId = useId()
+  const openSettings = useAdminUi((s) => s.openSettings)
 
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -248,14 +190,11 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
    * our own POST is still in flight — then the poller must not settle. */
   const [myStartedAt, setMyStartedAt] = useState<number | null>(null)
 
-  const [repoUrl, setRepoUrl] = useState('')
-  const [branch, setBranch] = useState(DEFAULT_BRANCH)
-  const [targetDir, setTargetDir] = useState('')
-  const [basePath, setBasePath] = useState('')
-  const [commitMessage, setCommitMessage] = useState('')
-  const [token, setToken] = useState('')
-  const [hasToken, setHasToken] = useState(false)
-  const [clearToken, setClearToken] = useState(false)
+  const [settings, setSettings] = useState<SettingsView>({
+    repoUrl: '',
+    branch: DEFAULT_BRANCH,
+    hasToken: false,
+  })
 
   useEffect(() => {
     if (!open) return
@@ -270,18 +209,12 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
       },
       (values) => {
         if (cancelled) return
-        setToken('')
-        setClearToken(false)
-        setRepoUrl(values.repoUrl)
-        setBranch(values.branch)
-        setTargetDir(values.targetDir)
-        setBasePath(values.basePath)
-        setHasToken(values.hasToken)
+        setSettings(values)
       },
     )
 
     // Adopt an already-running job (another editor started it, or this dialog
-    // was reopened mid-run) so the dialog shows its progress and outcome too.
+    // was reopened mid-run): skip the confirm view, show its progress.
     void getGithubPublishJob()
       .then((res) => {
         if (!cancelled && res.job?.state === 'running') {
@@ -378,32 +311,16 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
   }, [busy, myStartedAt, onClose])
 
   async function handlePublish() {
-    await startPublishFromForm(
-      { repoUrl, branch, targetDir, basePath, commitMessage, token, hasToken, clearToken },
-      runStepUp,
-      setBusy,
-      setError,
-      setHasToken,
-      setJob,
-      setMyStartedAt,
-    )
+    await startPublish(runStepUp, setBusy, setError, setMyStartedAt)
   }
 
-  function handleClearToken() {
-    setClearToken(true)
-    setToken('')
-    setError(null)
+  function handleOpenSettings() {
+    onClose()
+    openSettings('publishing')
   }
 
-  const tokenPlaceholder = hasToken && !clearToken
-    ? 'Leave blank to keep'
-    : 'ghp_…'
-
-  const tokenStatusLabel = clearToken
-    ? 'Token will be cleared on save'
-    : hasToken
-      ? 'Token saved'
-      : null
+  const unconfigured = isUnconfigured(settings)
+  const progress = busy && job ? jobLabel(job) : null
 
   return (
     <Dialog
@@ -411,191 +328,73 @@ export function GithubPublishDialog({ open, onClose }: GithubPublishDialogProps)
       onClose={onClose}
       title="Publish to GitHub"
       eyebrow="Static export"
-      size="lg"
+      size="sm"
       loading={loading}
-      closeOnEscape={!busy}
-      closeOnBackdrop={!busy}
-      footer={
-        <>
-          <Button
-            variant="secondary"
-            size="sm"
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            type="submit"
-            form={FORM_ID}
-            disabled={busy || loading}
-          >
-            {busy ? 'Publishing…' : 'Publish'}
-          </Button>
-        </>
-      }
     >
-      <form
-        id={FORM_ID}
-        className={styles.form}
-        onSubmit={(event) => {
-          event.preventDefault()
-          void handlePublish()
-        }}
-      >
-        <div className={styles.field}>
-          <label htmlFor={repoUrlId} className={styles.label}>
-            Repository URL
-          </label>
-          <Input
-            id={repoUrlId}
-            fieldSize="sm"
-            value={repoUrl}
-            onChange={(event) => {
-              setRepoUrl(event.target.value)
-              setError(null)
-            }}
-            placeholder="https://github.com/owner/repo"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={busy}
-            invalid={Boolean(error && !repoUrl.trim())}
-          />
-        </div>
-
-        <div className={styles.field}>
-          <label htmlFor={branchId} className={styles.label}>
-            Branch
-          </label>
-          <Input
-            id={branchId}
-            fieldSize="sm"
-            value={branch}
-            onChange={(event) => {
-              setBranch(event.target.value)
-              setError(null)
-            }}
-            placeholder={DEFAULT_BRANCH}
-            autoComplete="off"
-            spellCheck={false}
-            disabled={busy}
-          />
-        </div>
-
-        <div className={styles.field}>
-          <label htmlFor={targetDirId} className={styles.label}>
-            Target directory
-          </label>
-          <Input
-            id={targetDirId}
-            fieldSize="sm"
-            value={targetDir}
-            onChange={(event) => {
-              setTargetDir(event.target.value)
-              setError(null)
-            }}
-            placeholder="docs (empty = branch root)"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={busy}
-          />
-        </div>
-
-        <div className={styles.field}>
-          <label htmlFor={basePathId} className={styles.label}>
-            Base path
-          </label>
-          <Input
-            id={basePathId}
-            fieldSize="sm"
-            value={basePath}
-            onChange={(event) => {
-              setBasePath(event.target.value)
-              setError(null)
-            }}
-            placeholder="/repo-name"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={busy}
-          />
+      {busy ? (
+        <div className={styles.progressView}>
+          <p role="status" className={styles.progress}>
+            {progress ?? 'Publishing…'}
+          </p>
           <p className={styles.hint}>
-            Project Pages usually need /repo-name; user/org sites and apex custom domains use empty.
+            You can close this dialog — the push keeps running and you'll be
+            notified of the outcome.
           </p>
         </div>
-
-        <div className={styles.field}>
-          <label htmlFor={commitMessageId} className={styles.label}>
-            Commit message
-          </label>
-          <Input
-            id={commitMessageId}
-            fieldSize="sm"
-            value={commitMessage}
-            onChange={(event) => {
-              setCommitMessage(event.target.value)
-              setError(null)
-            }}
-            placeholder={DEFAULT_COMMIT_MESSAGE}
-            maxLength={280}
-            autoComplete="off"
-            disabled={busy}
-          />
-        </div>
-
-        <div className={styles.field}>
-          <div className={styles.tokenMeta}>
-            <label htmlFor={tokenId} className={styles.label}>
-              Personal access token
-            </label>
-            {hasToken && !clearToken && (
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                disabled={busy}
-                onClick={handleClearToken}
-              >
-                Clear token
-              </Button>
-            )}
+      ) : (
+        <>
+          <div className={styles.summary}>
+            <div className={styles.row}>
+              <span className={styles.label}>Repository</span>
+              <span className={styles.value}>
+                {settings.repoUrl || 'Not configured'}
+              </span>
+            </div>
+            <div className={styles.row}>
+              <span className={styles.label}>Branch</span>
+              <span className={styles.value}>{settings.branch}</span>
+            </div>
+            <div className={styles.row}>
+              <span className={styles.label}>Token</span>
+              <span className={styles.value}>
+                {settings.hasToken ? 'Saved' : 'Not configured'}
+              </span>
+            </div>
           </div>
-          {tokenStatusLabel && (
-            <p className={styles.tokenStatus} role="status">
-              {tokenStatusLabel}
+          {unconfigured && (
+            <p role="status" className={styles.hint}>
+              Configure the repository and token in Settings → Publishing
+              before publishing.
             </p>
           )}
-          <Input
-            id={tokenId}
-            fieldSize="sm"
-            type="password"
-            value={token}
-            onChange={(event) => {
-              setToken(event.target.value)
-              setClearToken(false)
-              setError(null)
-            }}
-            placeholder={tokenPlaceholder}
-            autoComplete="off"
-            spellCheck={false}
-            disabled={busy}
-            invalid={Boolean(error && !hasToken && !token.trim())}
-          />
-        </div>
-
-        {busy && job && jobLabel(job) && (
-          <p role="status" className={styles.progress}>
-            {jobLabel(job)}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className={styles.error}>
-            {error}
-          </p>
-        )}
-      </form>
+          {error && (
+            <p role="alert" className={styles.error}>
+              {error}
+            </p>
+          )}
+          <div className={styles.actions}>
+            {unconfigured ? (
+              <Button variant="primary" size="sm" onClick={handleOpenSettings}>
+                Open Settings
+              </Button>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={loading}
+                  onClick={() => void handlePublish()}
+                >
+                  Publish
+                </Button>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </Dialog>
   )
 }
