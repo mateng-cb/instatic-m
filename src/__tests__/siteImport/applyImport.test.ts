@@ -216,7 +216,7 @@ describe('buildImportPlan — structure', () => {
     expect(p.unusedCss).not.toContain('css/components/hero.css')
   })
 
-  it('folds a body <style> block into the plan as a per-page CSS source', () => {
+  it('keeps a body <style> block as a page-scoped stylesheet file by default', () => {
     const html = `<!doctype html><html><head>
       <style>.promo { color: rgb(255, 99, 71); } a:hover { text-decoration: underline; }</style>
     </head><body><div class="promo">Sale</div></body></html>`
@@ -224,17 +224,40 @@ describe('buildImportPlan — structure', () => {
       fileMap: makeSinglePageFileMap(html),
       currentSite: makeEmptySiteDocument(),
     })
+    // The inline CSS stays out of the site-wide rules cascade…
+    expect(p.styleRules).toHaveLength(0)
+    // …and is kept verbatim as a page-scoped stylesheet.
+    expect(p.stylesheets).toEqual([
+      {
+        path: 'index.html::inline',
+        pageSources: ['index.html'],
+        priority: 100,
+        content: '.promo { color: rgb(255, 99, 71); } a:hover { text-decoration: underline; }',
+      },
+    ])
+    expect(p.pages[0].nodeFragment.body?.classIds ?? []).toEqual([])
+    // The page node still carries the class NAME (linked to an id at commit time).
+    const fragment = p.pages[0].nodeFragment
+    const divNode = Object.values(fragment.nodes).find((n) => n.moduleId === 'base.container')
+    expect(divNode?.classIds).toContain('promo')
+  })
+
+  it("parses a body <style> block into style rules with inlineStyleMode: 'convert'", () => {
+    const html = `<!doctype html><html><head>
+      <style>.promo { color: rgb(255, 99, 71); } a:hover { text-decoration: underline; }</style>
+    </head><body><div class="promo">Sale</div></body></html>`
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html),
+      currentSite: makeEmptySiteDocument(),
+      options: { inlineStyleMode: 'convert' },
+    })
     // The <style>'s class rule appears in the plan with its declarations.
     const promo = p.styleRules.find((r) => r.kind === 'class' && r.name === 'promo')
     expect(promo).toBeDefined()
     expect(promo!.styles.color).toContain('255')
     // The ambient selector is registered too — verbatim, no generated scoping.
     expect(p.styleRules.some((r) => r.kind === 'ambient' && r.selector === 'a:hover')).toBe(true)
-    expect(p.pages[0].nodeFragment.body?.classIds ?? []).toEqual([])
-    // The page node still carries the class NAME (linked to an id at commit time).
-    const fragment = p.pages[0].nodeFragment
-    const divNode = Object.values(fragment.nodes).find((n) => n.moduleId === 'base.container')
-    expect(divNode?.classIds).toContain('promo')
+    expect(p.stylesheets).toHaveLength(0)
   })
 
   it('collects image assets', () => {

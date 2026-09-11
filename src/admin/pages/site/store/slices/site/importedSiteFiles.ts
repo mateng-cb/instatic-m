@@ -10,6 +10,9 @@
  *
  * Paths are normalised + made unique within `site.files`; an unsafe source
  * path falls back to a sanitised name under `src/scripts/` / `src/styles/`.
+ * Re-importing a source whose (safe) path already exists as the same file
+ * type updates that file in place — content and runtime scope — rather than
+ * appending a suffixed twin.
  */
 
 import { nanoid } from 'nanoid'
@@ -122,16 +125,30 @@ function commitFiles<T extends ImportedFileItem>(
   const committed: { id: string; path: string }[] = []
 
   for (const item of items) {
-    const path = uniqueFilePath(safeFilePath(item.path, fallbackDir, fallbackName), usedPaths)
+    const desiredPath = safeFilePath(item.path, fallbackDir, fallbackName)
+    const pageIds = Array.isArray(item.pageIds)
+      ? item.pageIds.filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0)
+      : []
+
+    // Re-importing the same source (same path, same type) updates the
+    // existing file in place — content and runtime scope — instead of
+    // appending a `-2` twin for every import run.
+    const existing = site.files.find((f) => f.type === type && f.path === desiredPath)
+    if (existing) {
+      existing.content = item.content
+      existing.updatedAt = Date.now()
+      registerRuntime(item, existing.id, pageIds)
+      committed.push({ id: existing.id, path: existing.path })
+      continue
+    }
+
+    const path = uniqueFilePath(desiredPath, usedPaths)
     usedPaths.add(path)
 
     const id = nanoid()
     const now = Date.now()
     site.files.push({ id, path, type, content: item.content, createdAt: now, updatedAt: now })
 
-    const pageIds = Array.isArray(item.pageIds)
-      ? item.pageIds.filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0)
-      : []
     registerRuntime(item, id, pageIds)
 
     committed.push({ id, path })

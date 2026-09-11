@@ -15,9 +15,7 @@ import {
   buildImportPlan,
   commitImportPlan,
   applyConflictResolutions,
-  detectConflicts,
   type FileMap,
-  type ImportPlan,
   type SiteImportAdapter,
   type SiteImportTransaction,
   type NewStyleRule,
@@ -42,6 +40,7 @@ import {
   linkImportedClassNames,
   registerStyleRuleOrigin,
 } from '../src/admin/pages/site/store/slices/site/importLinking'
+import { addImportedStylesheets } from '../src/admin/pages/site/store/slices/site/importedSiteFiles'
 
 const API = 'http://localhost:3001/admin/api/cms'
 const EMAIL = 'admin@ditexpo.local'
@@ -62,25 +61,17 @@ function parseArgs(argv: string[]) {
   return { pack, slug, clearAllStyleRules, report }
 }
 
-/** 打包入口固定为 index.html；当 --slug 不同时重映射目标 slug。 */
-function applyTargetSlug(plan: ImportPlan, targetSlug: string, site: SiteDocument): ImportPlan {
-  const pages = plan.pages.map((p) => {
-    const base = basename(p.source, '.html')
-    if (base === 'index') return { ...p, slug: targetSlug }
-    return p
-  })
-  if (pages.every((p, i) => p.slug === plan.pages[i]!.slug)) return plan
-  const detected = detectConflicts(site, pages, plan.styleRules, plan.colors, plan.fontTokens)
-  return {
-    ...plan,
-    pages,
-    conflicts: {
-      ...plan.conflicts,
-      pages: detected.pages,
-      rules: detected.rules,
-      tokens: detected.tokens,
-    },
-  }
+/**
+ * 打包入口固定为 index.html；当 --slug 不同时在 FileMap 层重命名为
+ * <slug>.html。重命名做在 buildImportPlan 之前，页面 slug、内联样式表的
+ * syntheticPath（<slug>.html::inline）、conflicts 全部自然落在目标 slug
+ * 上——否则逐包导入时每页的内联表都叫 "index.html::inline"，重导下一页
+ * 会原位覆盖上一页的页内样式文件。
+ */
+function remapEntryHtml(fileMap: FileMap, targetSlug: string): void {
+  if (targetSlug === 'index' || !fileMap.files['index.html']) return
+  fileMap.files[`${targetSlug}.html`] = fileMap.files['index.html']!
+  delete fileMap.files['index.html']
 }
 
 const happyWindow = new GlobalWindow({
@@ -304,7 +295,11 @@ function makeInMemoryAdapter(site: SiteDocument, jar: CookieJar, stats: { upload
         addColorTokens() { return [] },
         overwriteColorTokens() { return [] },
         addScripts() { return [] },
-        addStylesheets() { return [] },
+        // 页级样式文件（含内联 <style> keep 的页级表）落成 SiteFile +
+        // page-scoped runtime 配置，与 admin store 的提交语义一致。
+        addStylesheets(stylesheets) {
+          return addImportedStylesheets(site, undefined, stylesheets)
+        },
       }
       recipe(tx)
     },
@@ -376,8 +371,8 @@ async function main() {
       mimeType: guessMime(key),
     }
   }
+  remapEntryHtml(fileMap, TARGET_SLUG)
   let plan = buildImportPlan({ fileMap, currentSite: site })
-  plan = applyTargetSlug(plan, TARGET_SLUG, site)
   // 强制全部 overwrite。commitImportPlan 会读 plan.conflicts.*
   //（不只看 applyConflictResolutions 对页面 slug 的改写），
   // 因此必须直接改写 plan 上的 conflicts。
