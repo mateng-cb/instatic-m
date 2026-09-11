@@ -38,17 +38,17 @@ function homeDir(): string {
 
 // --- Login state: logged in already, or credentials on disk to login with. --
 
-function dockerConfigAuths(): string[] {
+async function dockerConfigAuths(): Promise<string[]> {
 	try {
-		const config = JSON.parse(Bun.file(`${homeDir()}/.docker/config.json`).text())
+		const config = JSON.parse(await Bun.file(`${homeDir()}/.docker/config.json`).text())
 		return config.auths ? Object.keys(config.auths) : []
 	} catch {
 		return [] // No docker config at all — not logged in anywhere.
 	}
 }
 
-function loggedIn(): boolean {
-	return dockerConfigAuths().some((k) => k.includes(REGISTRY))
+async function loggedIn(): Promise<boolean> {
+	return (await dockerConfigAuths()).some((k) => k.includes(REGISTRY))
 }
 
 interface SwrCredentials {
@@ -75,7 +75,7 @@ async function readCredentials(): Promise<SwrCredentials | null> {
 	return { username, password }
 }
 
-if (!loggedIn()) {
+if (!(await loggedIn())) {
 	console.log(`[release] not logged in to ${REGISTRY} — trying ${CREDS_FILE} …`)
 	const creds = await readCredentials()
 	if (!creds) {
