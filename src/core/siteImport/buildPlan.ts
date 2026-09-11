@@ -18,7 +18,7 @@ import {
 } from '@core/page-tree'
 import { compareVariants } from '@core/fonts'
 import { expandLinkedCssImports } from './cssImports'
-import { extractGoogleFontImports } from './fontImports'
+import { extractGoogleFontImports, stripGoogleFontImportRules } from './fontImports'
 import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
@@ -50,6 +50,14 @@ interface BuildImportPlanInput {
      * (FileMap key). Unlisted paths convert to editable style rules.
      */
     stylesheetModes?: Record<string, StylesheetImportMode>
+    /**
+     * How each page's `<style>` blocks import. `'file'` (default) keeps the
+     * inline CSS as a page-scoped stylesheet file — the source site scopes a
+     * page's `<style>` to its document, and a page-local override must not
+     * leak into the site-wide cascade. `'convert'` parses it into the global
+     * style-rules cascade.
+     */
+    inlineStyleMode?: StylesheetImportMode
   }
 }
 
@@ -114,12 +122,19 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     .map((f) => f.path)
 
   // 4. Parse every converted CSS source — external sheets first, then each
-  //    page's `<style>` CSS as a synthetic per-page source. The synthetic
-  //    cssPath `<htmlPath>::inline` keeps `url(...)` resolution relative to
-  //    the HTML file's directory (dirname() drops the suffix) and is appended
-  //    LAST to the page's linked paths so an inline `<style>` wins the cascade
-  //    over external sheets for a shared class name. Both routes flow through
-  //    the exact same parse → token → asset → conflict pipeline (planCss.ts).
+  //    page's `<style>` CSS. The synthetic cssPath `<htmlPath>::inline` keeps
+  //    `url(...)` resolution relative to the HTML file's directory (dirname()
+  //    drops the suffix).
+  //
+  //    Inline CSS is page-scoped in the source site, so by default it is kept
+  //    as a page-scoped stylesheet file (same shape as `mode: 'file'` linked
+  //    sheets), loaded after every kept linked sheet — the same override
+  //    position the browser gives an inline `<style>`. A page-local override
+  //    (download.html's 42vh swiper height) must not leak into the site-wide
+  //    cascade and suppress the shared sheet's rule on every other page.
+  //    `inlineStyleMode: 'convert'` parses it into that global cascade
+  //    instead, appended LAST to the page's linked paths so the inline block
+  //    still wins over external sheets for a shared class name.
   const cssPlan = createCssPlanState()
   const parseOptions = {
     breakpoints: currentSite.breakpoints.map((bp) => ({ id: bp.id, width: bp.width, mediaQuery: bp.mediaQuery })),
@@ -131,12 +146,25 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     if (!cssSource) continue
     parseCssSourceIntoPlan(cssPath, cssSource, cssPlan, parseOptions)
   }
+  const inlineStyleMode = options?.inlineStyleMode ?? 'file'
+  let nextInlinePriority = rawStylesheetSources.reduce((max, s) => Math.max(max, s.priority), 99) + 1
   for (const plan of rawPagePlans) {
     const inlineCss = inlineCssByPage.get(plan.source)
     if (!inlineCss) continue
     const syntheticPath = `${plan.source}::inline`
-    parseCssSourceIntoPlan(syntheticPath, inlineCss, cssPlan, parseOptions)
-    plan.linkedCssPaths = [...plan.linkedCssPaths, syntheticPath]
+    if (inlineStyleMode === 'convert') {
+      parseCssSourceIntoPlan(syntheticPath, inlineCss, cssPlan, parseOptions)
+      plan.linkedCssPaths = [...plan.linkedCssPaths, syntheticPath]
+      continue
+    }
+    collectGoogleFonts(inlineCss)
+    rawStylesheetSources.push({
+      path: syntheticPath,
+      pageSources: [plan.source],
+      priority: nextInlinePriority,
+      parts: [{ cssPath: syntheticPath, cssText: stripGoogleFontImportRules(inlineCss) }],
+    })
+    nextInlinePriority += 1
   }
   warnings.push(...cssPlan.warnings)
   droppedAtRules.push(...cssPlan.droppedAtRules)
