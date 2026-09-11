@@ -25,6 +25,12 @@ import { normalizeTargetDir, walkExportFiles } from './gitCliPushInternals'
 export type { GitPushInput, GitPushProgress, GitPushResult } from './types'
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 120_000
+/**
+ * Clone and push move the whole site over the wire — a real shallow clone of
+ * a mature site repo takes minutes (measured 3m37s for 4132 files on a slow
+ * link), far past the short-command budget. They get their own, generous one.
+ */
+const LONG_COMMAND_TIMEOUT_MS = 600_000
 const DEFAULT_COMMIT_MESSAGE = 'Publish site from Instatic'
 
 export class GitPushError extends Error {
@@ -55,7 +61,14 @@ async function runGit(args: string[], opts: RunOpts): Promise<string> {
     proc.exited,
   ])
   if (code !== 0) {
-    throw new GitPushError(gitFailureMessage(args[0] ?? 'git', code, stderr, opts.token))
+    let message = gitFailureMessage(args[0] ?? 'git', code, stderr, opts.token)
+    // SIGTERM (143 on Windows / -15 as a signal) is how Bun.spawn's timeout
+    // kills a command; without this hint git's last words ("fatal: early
+    // EOF" from a half-transfer) read like a network fault, not a timeout.
+    if (code === 143 || code === -15) {
+      message += ` — killed after exceeding the ${opts.timeoutMs}ms command timeout`
+    }
+    throw new GitPushError(message)
   }
   return stdout
 }
@@ -90,13 +103,22 @@ function neutralRemote(input: GitPushInput): string {
  * `workspaceMatches` can compare the stored remote against `neutralRemote` to
  * detect a repo/branch switch in settings.
  */
-async function cloneWorkspace(input: GitPushInput, neutralUrl: string, timeoutMs: number): Promise<void> {
+async function cloneWorkspace(
+  input: GitPushInput,
+  neutralUrl: string,
+  shortTimeoutMs: number,
+  longTimeoutMs: number,
+): Promise<void> {
   await rm(input.workDir, { recursive: true, force: true })
-  await mkdir(join(input.workDir, '..'), { recursive: true })
+  // Create the whole workDir chain in one recursive call. Joining '..' would
+  // degrade to mkdir('.') for a single-segment relative workDir, and Bun on
+  // Windows throws EEXIST for that even with recursive — a git clone into a
+  // pre-created empty directory is fine.
+  await mkdir(input.workDir, { recursive: true })
   // Language-independent branch existence check: localized git error text
   // ("Remote branch … not found" / 致命错误：…未发现) is not matchable.
   const remoteHeads = await runGit(['ls-remote', '--heads', remoteUrl(input), input.branch], {
-    timeoutMs, token: input.token,
+    timeoutMs: shortTimeoutMs, token: input.token,
   })
   if (remoteHeads.trim() === '') {
     throw new GitPushError(
@@ -106,10 +128,10 @@ async function cloneWorkspace(input: GitPushInput, neutralUrl: string, timeoutMs
   try {
     await runGit(
       ['clone', '--depth', '1', '--no-tags', '--branch', input.branch, remoteUrl(input), input.workDir],
-      { timeoutMs, token: input.token },
+      { timeoutMs: longTimeoutMs, token: input.token },
     )
     await runGit(['remote', 'set-url', 'origin', neutralUrl], {
-      timeoutMs, cwd: input.workDir,
+      timeoutMs: shortTimeoutMs, cwd: input.workDir,
     })
   } catch (err) {
     await rm(input.workDir, { recursive: true, force: true })
@@ -182,16 +204,17 @@ async function syncExportFiles(
 
 async function commitAndPush(
   input: GitPushInput,
-  timeoutMs: number,
+  shortTimeoutMs: number,
+  longTimeoutMs: number,
 ): Promise<GitPushResult> {
-  await runGit(['add', '-A'], { timeoutMs, cwd: input.workDir })
+  await runGit(['add', '-A'], { timeoutMs: shortTimeoutMs, cwd: input.workDir })
 
-  const status = await runGit(['status', '--porcelain'], { timeoutMs, cwd: input.workDir })
+  const status = await runGit(['status', '--porcelain'], { timeoutMs: shortTimeoutMs, cwd: input.workDir })
   let commitSha: string
   if (status.trim() === '') {
     // Nothing changed since the last publish — report the existing tip
     // instead of manufacturing an empty commit.
-    commitSha = (await runGit(['rev-parse', 'HEAD'], { timeoutMs, cwd: input.workDir })).trim()
+    commitSha = (await runGit(['rev-parse', 'HEAD'], { timeoutMs: shortTimeoutMs, cwd: input.workDir })).trim()
   } else {
     await runGit(
       [
@@ -199,13 +222,13 @@ async function commitAndPush(
         '-c', 'user.email=publish@instatic.local',
         'commit', '-m', input.commitMessage ?? DEFAULT_COMMIT_MESSAGE,
       ],
-      { timeoutMs, cwd: input.workDir },
+      { timeoutMs: shortTimeoutMs, cwd: input.workDir },
     )
     // Push to the tokened URL explicitly — origin stays credential-free.
     await runGit(['push', remoteUrl(input), input.branch], {
-      timeoutMs, token: input.token, cwd: input.workDir,
+      timeoutMs: longTimeoutMs, token: input.token, cwd: input.workDir,
     })
-    commitSha = (await runGit(['rev-parse', 'HEAD'], { timeoutMs, cwd: input.workDir })).trim()
+    commitSha = (await runGit(['rev-parse', 'HEAD'], { timeoutMs: shortTimeoutMs, cwd: input.workDir })).trim()
   }
   return { commitSha }
 }
@@ -214,22 +237,24 @@ async function commitAndPush(
 async function syncCommitPush(
   input: GitPushInput,
   targetDir: string,
-  timeoutMs: number,
+  shortTimeoutMs: number,
+  longTimeoutMs: number,
 ): Promise<GitPushResult> {
   const total = await syncExportFiles(input, targetDir, input.onProgress)
-  const result = await commitAndPush(input, timeoutMs)
+  const result = await commitAndPush(input, shortTimeoutMs, longTimeoutMs)
   input.onProgress?.({ phase: 'finalizing', uploaded: total, total, currentPath: '' })
   return result
 }
 
 export async function gitCliPush(input: GitPushInput): Promise<GitPushResult> {
   const targetDir = normalizeTargetDir(input.targetDir)
-  const timeoutMs = input.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
+  const shortTimeoutMs = input.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
+  const longTimeoutMs = input.commandTimeoutMs ?? LONG_COMMAND_TIMEOUT_MS
 
   // Fast path: workspace healthy → sync, commit, push.
-  if (await workspaceMatches(input, neutralRemote(input), timeoutMs)) {
+  if (await workspaceMatches(input, neutralRemote(input), shortTimeoutMs)) {
     try {
-      return await syncCommitPush(input, targetDir, timeoutMs)
+      return await syncCommitPush(input, targetDir, shortTimeoutMs, longTimeoutMs)
     } catch (err) {
       // The self-heal path replays the push from a fresh clone; the original
       // failure is logged so transient-vs-persistent causes stay diagnosable.
@@ -238,9 +263,9 @@ export async function gitCliPush(input: GitPushInput): Promise<GitPushResult> {
   }
 
   // Self-heal: fresh clone, then replay once. A second failure is real.
-  await cloneWorkspace(input, neutralRemote(input), timeoutMs)
+  await cloneWorkspace(input, neutralRemote(input), shortTimeoutMs, longTimeoutMs)
   try {
-    return await syncCommitPush(input, targetDir, timeoutMs)
+    return await syncCommitPush(input, targetDir, shortTimeoutMs, longTimeoutMs)
   } catch (err) {
     // Leave no half-broken workspace behind for the next run to trip over.
     await rm(input.workDir, { recursive: true, force: true })
