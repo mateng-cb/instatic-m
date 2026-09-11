@@ -1,10 +1,14 @@
 /**
  * 通过 CMS API 做无头可行性导入（不走 Playwright）。
  *
- *   bun run scripts/verify-ditexpo-api-import.ts
+ *   INSTATIC_EMAIL=… INSTATIC_PASSWORD=… bun run scripts/verify-ditexpo-api-import.ts \
+ *     [--api http://localhost:3001] [--pack <包目录>] [--slug <slug>] [--clear-all-style-rules]
  *
  * 流程：登录 → 加载站点 → buildImportPlan → 上传资源 → 变更站点 →
  * PUT site-document（replace）→ step-up → 发布 → GET /
+ *
+ * 端点与凭据见 scripts/lib/cmsClient.ts（--api/--email/--password 或
+ * INSTATIC_API/INSTATIC_EMAIL/INSTATIC_PASSWORD 环境变量）。
  */
 import { GlobalWindow } from 'happy-dom'
 import { readdir } from 'node:fs/promises'
@@ -29,9 +33,6 @@ import {
   type SiteDocument,
   type StyleRule,
 } from '@core/page-tree'
-import { pageFromRow } from '../src/core/data/pageFromRow'
-import { visualComponentFromRow } from '../src/core/data/componentFromRow'
-import { savedLayoutFromRow } from '../src/core/data/layoutFromRow'
 import {
   createStyleRuleOrderAllocator,
   findReimportedStyleRule,
@@ -41,12 +42,9 @@ import {
   registerStyleRuleOrigin,
 } from '../src/admin/pages/site/store/slices/site/importLinking'
 import { addImportedStylesheets } from '../src/admin/pages/site/store/slices/site/importedSiteFiles'
+import { CmsClient, takeEndpointArgs } from './lib/cmsClient'
 
-const API = 'http://localhost:3001/admin/api/cms'
-const EMAIL = 'admin@ditexpo.local'
-const PASSWORD = 'DitexpoVerify1!'
-
-function parseArgs(argv: string[]) {
+function parseRunArgs(argv: string[]) {
   let pack = join(import.meta.dir, '../../DITExpohtml/doc/instatic-import-pack')
   let slug = 'index'
   let clearAllStyleRules = false
@@ -89,37 +87,6 @@ Object.assign(globalThis, {
   Document: happyWindow.Document,
   DocumentFragment: happyWindow.DocumentFragment,
 })
-
-class CookieJar {
-  private cookies = new Map<string, string>()
-  absorb(res: Response) {
-    const raw = typeof res.headers.getSetCookie === 'function'
-      ? res.headers.getSetCookie()
-      : []
-    const list = raw.length ? raw : [res.headers.get('set-cookie')].filter(Boolean) as string[]
-    for (const line of list) {
-      const part = line.split(';')[0]!
-      const eq = part.indexOf('=')
-      if (eq > 0) this.cookies.set(part.slice(0, eq), part.slice(eq + 1))
-    }
-  }
-  header(): string {
-    return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
-  }
-}
-
-async function api(
-  jar: CookieJar,
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  const headers = new Headers(init.headers)
-  const cookie = jar.header()
-  if (cookie) headers.set('cookie', cookie)
-  const res = await fetch(`${API}${path}`, { ...init, headers })
-  jar.absorb(res)
-  return res
-}
 
 function guessMime(path: string): string | undefined {
   const lower = path.toLowerCase()
@@ -172,7 +139,7 @@ function applyImportedBodyAttributes(
   }
 }
 
-function makeInMemoryAdapter(site: SiteDocument, jar: CookieJar, stats: { uploads: number }) {
+function makeInMemoryAdapter(site: SiteDocument, client: CmsClient, stats: { uploads: number }) {
   const adapter: SiteImportAdapter = {
     async installGoogleFont(font) {
       // 可行性验证跳过联网安装字体，返回占位条目。
@@ -193,7 +160,7 @@ function makeInMemoryAdapter(site: SiteDocument, jar: CookieJar, stats: { upload
         type: mimeType || 'application/octet-stream',
       })
       form.set('file', file)
-      const res = await api(jar, '/media', { method: 'POST', body: form })
+      const res = await client.request('/media', { method: 'POST', body: form })
       if (!res.ok) {
         const text = await res.text()
         throw new Error(`upload ${path} failed: ${res.status} ${text}`)
@@ -308,52 +275,17 @@ function makeInMemoryAdapter(site: SiteDocument, jar: CookieJar, stats: { upload
 }
 
 async function main() {
-  const { pack: PACK, slug: TARGET_SLUG, clearAllStyleRules, report: REPORT } = parseArgs(process.argv.slice(2))
-  const jar = new CookieJar()
+  const { endpoint, rest } = takeEndpointArgs(process.argv.slice(2))
+  const { pack: PACK, slug: TARGET_SLUG, clearAllStyleRules, report: REPORT } = parseRunArgs(rest)
+  const client = new CmsClient(endpoint)
   const steps: string[] = []
   const t0 = performance.now()
-  steps.push(`args pack=${PACK} slug=${TARGET_SLUG} clearAllStyleRules=${clearAllStyleRules}`)
+  steps.push(`args api=${endpoint.origin} pack=${PACK} slug=${TARGET_SLUG} clearAllStyleRules=${clearAllStyleRules}`)
 
-  // 1) 登录
-  {
-    const res = await api(jar, '/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-    })
-    if (!res.ok) throw new Error(`login failed ${res.status} ${await res.text()}`)
-    steps.push('login-ok')
-  }
-
-  // 2) 加载站点
-  const [shellRes, pagesRes, componentsRes, layoutsRes] = await Promise.all([
-    api(jar, '/site'),
-    api(jar, '/pages'),
-    api(jar, '/components'),
-    api(jar, '/layouts'),
-  ])
-  if (!shellRes.ok || !pagesRes.ok) {
-    throw new Error(`load site failed shell=${shellRes.status} pages=${pagesRes.status}`)
-  }
-  const shellBody = await shellRes.json() as { site: Omit<SiteDocument, 'pages' | 'visualComponents' | 'layouts'>; seq: number }
-  const pagesBody = await pagesRes.json() as { rows: unknown[] }
-  const componentsBody = componentsRes.ok ? await componentsRes.json() as { rows: unknown[] } : { rows: [] }
-  const layoutsBody = layoutsRes.ok ? await layoutsRes.json() as { rows: unknown[] } : { rows: [] }
-
-  const pages = pagesBody.rows.map((row) => pageFromRow(row as never)).filter(Boolean)
-  const visualComponents = componentsBody.rows
-    .map((row) => visualComponentFromRow(row as never))
-    .filter(Boolean)
-  const layouts = layoutsBody.rows
-    .map((row) => savedLayoutFromRow(row as never))
-    .filter(Boolean)
-
-  const site: SiteDocument = {
-    ...(shellBody.site as SiteDocument),
-    pages: pages as SiteDocument['pages'],
-    visualComponents: visualComponents as SiteDocument['visualComponents'],
-    layouts: layouts as SiteDocument['layouts'],
-  }
+  // 1) 登录 + 2) 加载站点
+  await client.login()
+  steps.push('login-ok')
+  const { site, seq } = await client.loadSite()
   if (clearAllStyleRules) {
     site.styleRules = {}
     steps.push(`site-loaded pages=${site.pages.length} styleRules-cleared-all`)
@@ -413,49 +345,23 @@ async function main() {
 
   // 4) 提交（上传资源 + 变更内存站点）
   const stats = { uploads: 0 }
-  const adapter = makeInMemoryAdapter(site, jar, stats)
+  const adapter = makeInMemoryAdapter(site, client, stats)
   const result = await commitImportPlan(plan, adapter)
   steps.push(`committed uploads=${stats.uploads} resultPages=${result.pages.length}`)
 
   // 5) replace 模式保存站点文档
-  const { pages: savedPages, visualComponents: vcs, layouts: savedLayouts, ...shell } = site
-  const saveRes = await api(jar, '/site-document', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      mode: 'replace',
-      site: shell,
-      changedPages: savedPages,
-      deletedPageIds: [],
-      changedComponents: vcs,
-      deletedComponentIds: [],
-      changedLayouts: savedLayouts,
-      deletedLayoutIds: [],
-      baseSeqs: {},
-      shellBaseSeq: shellBody.seq ?? 0,
-    }),
-  })
-  if (!saveRes.ok) {
-    throw new Error(`site-document save failed ${saveRes.status} ${await saveRes.text()}`)
-  }
+  await client.saveSite(site, seq)
   steps.push('site-document-saved')
 
   // 6) step-up 提权 + 发布
-  const stepUp = await api(jar, '/auth/step-up', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: PASSWORD }),
-  })
-  if (!stepUp.ok) throw new Error(`step-up failed ${stepUp.status} ${await stepUp.text()}`)
+  await client.stepUp()
   steps.push('step-up-ok')
 
-  const pubRes = await api(jar, '/publish', { method: 'POST' })
-  if (!pubRes.ok) throw new Error(`publish failed ${pubRes.status} ${await pubRes.text()}`)
-  const pubJson = await pubRes.json()
+  const pubJson = await client.publish()
   steps.push(`publish-ok ${JSON.stringify(pubJson)}`)
 
   // 7) 公开页校验
-  const home = await fetch('http://localhost:3001/')
+  const home = await fetch(client.publicUrl('/'))
   const homeHtml = await home.text()
   const homeOk = home.status === 200 && /DITExpo|数字基础设施/i.test(homeHtml)
 
@@ -464,7 +370,7 @@ async function main() {
   let pageHtml = ''
   let pageHasContent = true
   if (TARGET_SLUG !== 'index') {
-    const pageRes = await fetch(`http://localhost:3001/${TARGET_SLUG}`)
+    const pageRes = await fetch(client.publicUrl(`/${TARGET_SLUG}`))
     pageStatus = pageRes.status
     pageHtml = await pageRes.text()
     pageHasContent = /展会介绍|DITExpo|数字基础设施/i.test(pageHtml)
@@ -472,7 +378,7 @@ async function main() {
     steps.push(`verify /${TARGET_SLUG} status=${pageStatus} content=${pageHasContent}`)
   }
 
-  const importedPage = savedPages.find((p) => p.slug === TARGET_SLUG)
+  const importedPage = site.pages.find((p) => p.slug === TARGET_SLUG)
   const report = {
     ok: homeOk && pageOk,
     slug: TARGET_SLUG,
@@ -495,7 +401,7 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  const { report: REPORT } = parseArgs(process.argv.slice(2))
+  const { report: REPORT } = parseRunArgs(process.argv.slice(2))
   const report = {
     ok: false,
     error: err instanceof Error ? err.stack ?? err.message : String(err),

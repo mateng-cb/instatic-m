@@ -2,25 +2,23 @@
  * 为 DITExpo 页面挂载运行时脚本（共享 classic / 新闻 Swiper / 额外脚本），
  * 按需解析 swiper 依赖，保存 site-document、发布并校验。
  *
- *   bun run scripts/ditexpo-attach-runtime-scripts.ts --slug index
- *   bun run scripts/ditexpo-attach-runtime-scripts.ts --slug introduce
+ *   INSTATIC_EMAIL=… INSTATIC_PASSWORD=… bun run scripts/ditexpo-attach-runtime-scripts.ts \
+ *     [--api http://localhost:3001] --slug index
+ *
+ * 端点与凭据见 scripts/lib/cmsClient.ts（--api/--email/--password 或
+ * INSTATIC_API/INSTATIC_EMAIL/INSTATIC_PASSWORD 环境变量）。
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
-import { pageFromRow } from '../src/core/data/pageFromRow'
-import { visualComponentFromRow } from '../src/core/data/componentFromRow'
-import { savedLayoutFromRow } from '../src/core/data/layoutFromRow'
-import type { SiteDocument } from '../src/core/page-tree'
+import type { SiteDocument } from '@core/page-tree'
 import {
   DEFAULT_SCRIPT_RUNTIME_CONFIG,
   type SiteScriptRuntimeConfig,
 } from '../src/core/site-runtime'
 import { runtimeNeedsForSlug } from './ditexpo-page-runtime-map'
+import { CmsClient, takeEndpointArgs } from './lib/cmsClient'
 
-const API = 'http://localhost:3001/admin/api/cms'
-const EMAIL = 'admin@ditexpo.local'
-const PASSWORD = 'DitexpoVerify1!'
 const PACKS_ROOT = join(import.meta.dir, '../../DITExpohtml/doc/instatic-packs')
 const LEGACY_PACK = join(import.meta.dir, '../../DITExpohtml/doc/instatic-import-pack')
 
@@ -312,7 +310,7 @@ if (el) {
 }
 `
 
-function parseArgs(argv: string[]) {
+function parseRunArgs(argv: string[]) {
   let slug = 'index'
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!
@@ -332,35 +330,8 @@ function reportPathForSlug(slug: string): string {
   return join(LEGACY_PACK, `验证报告-runtime-scripts-${slug}.json`)
 }
 
-function publicUrlForSlug(slug: string): string {
-  return slug === 'index' ? 'http://localhost:3001/' : `http://localhost:3001/${slug}`
-}
-
-class CookieJar {
-  private cookies = new Map<string, string>()
-  absorb(res: Response) {
-    const raw = typeof res.headers.getSetCookie === 'function'
-      ? res.headers.getSetCookie()
-      : []
-    const list = raw.length ? raw : ([res.headers.get('set-cookie')].filter(Boolean) as string[])
-    for (const line of list) {
-      const part = line.split(';')[0]!
-      const eq = part.indexOf('=')
-      if (eq > 0) this.cookies.set(part.slice(0, eq), part.slice(eq + 1))
-    }
-  }
-  header(): string {
-    return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
-  }
-}
-
-async function api(jar: CookieJar, path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers)
-  const cookie = jar.header()
-  if (cookie) headers.set('cookie', cookie)
-  const res = await fetch(`${API}${path}`, { ...init, headers })
-  jar.absorb(res)
-  return res
+function publicUrlForSlug(slug: string, origin: string): string {
+  return slug === 'index' ? `${origin}/` : `${origin}/${slug}`
 }
 
 function upsertScriptFile(
@@ -421,7 +392,7 @@ type PageVerify = {
   hasSwiperImportmap: boolean
 }
 
-async function verifyPublishedPage(url: string): Promise<PageVerify> {
+async function verifyPublishedPage(url: string, origin: string): Promise<PageVerify> {
   const res = await fetch(url)
   const html = await res.text()
   const scriptTags = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])
@@ -441,7 +412,7 @@ async function verifyPublishedPage(url: string): Promise<PageVerify> {
   let classicHasCountdown = false
   let classicHasHamburgerBars = false
   if (classicSrc) {
-    const classicJs = await (await fetch(`http://localhost:3001${classicSrc}`)).text()
+    const classicJs = await (await fetch(`${origin}${classicSrc}`)).text()
     classicHasCountdown = /initCountdown|desktop-days-digit/.test(classicJs)
     classicHasHamburgerBars = /ensureHamburgerBars/.test(classicJs)
   }
@@ -461,59 +432,17 @@ async function verifyPublishedPage(url: string): Promise<PageVerify> {
 }
 
 async function main() {
-  const { slug, report: REPORT } = parseArgs(process.argv.slice(2))
+  const { endpoint, rest } = takeEndpointArgs(process.argv.slice(2))
+  const { slug, report: REPORT } = parseRunArgs(rest)
   const needs = runtimeNeedsForSlug(slug)
-  const jar = new CookieJar()
+  const client = new CmsClient(endpoint)
   const steps: string[] = []
   const t0 = performance.now()
-  steps.push(`slug=${slug}`)
+  steps.push(`api=${endpoint.origin} slug=${slug}`)
 
-  {
-    const res = await api(jar, '/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-    })
-    if (!res.ok) throw new Error(`login failed ${res.status} ${await res.text()}`)
-    steps.push('login-ok')
-  }
-
-  const [shellRes, pagesRes, componentsRes, layoutsRes] = await Promise.all([
-    api(jar, '/site'),
-    api(jar, '/pages'),
-    api(jar, '/components'),
-    api(jar, '/layouts'),
-  ])
-  if (!shellRes.ok || !pagesRes.ok) {
-    throw new Error(`load site failed shell=${shellRes.status} pages=${pagesRes.status}`)
-  }
-
-  const shellBody = (await shellRes.json()) as {
-    site: Omit<SiteDocument, 'pages' | 'visualComponents' | 'layouts'>
-    seq: number
-  }
-  const pagesBody = (await pagesRes.json()) as { rows: unknown[] }
-  const componentsBody = componentsRes.ok
-    ? ((await componentsRes.json()) as { rows: unknown[] })
-    : { rows: [] }
-  const layoutsBody = layoutsRes.ok
-    ? ((await layoutsRes.json()) as { rows: unknown[] })
-    : { rows: [] }
-
-  const pages = pagesBody.rows.map((row) => pageFromRow(row as never)).filter(Boolean)
-  const visualComponents = componentsBody.rows
-    .map((row) => visualComponentFromRow(row as never))
-    .filter(Boolean)
-  const layouts = layoutsBody.rows
-    .map((row) => savedLayoutFromRow(row as never))
-    .filter(Boolean)
-
-  const site: SiteDocument = {
-    ...(shellBody.site as SiteDocument),
-    pages: pages as SiteDocument['pages'],
-    visualComponents: visualComponents as SiteDocument['visualComponents'],
-    layouts: layouts as SiteDocument['layouts'],
-  }
+  await client.login()
+  steps.push('login-ok')
+  const { site, seq } = await client.loadSite()
 
   const targetPage = site.pages.find((p) => p.slug === slug)
   if (!targetPage) {
@@ -585,7 +514,7 @@ async function main() {
       steps.push(`packageJson.dependencies.swiper=${site.packageJson.dependencies.swiper}`)
     }
 
-    const resolveRes = await api(jar, '/runtime/dependencies/resolve', {
+    const resolveRes = await client.request('/runtime/dependencies/resolve', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ packageJson: site.packageJson }),
@@ -609,44 +538,20 @@ async function main() {
     steps.push('deps-skipped (no swiper need)')
   }
 
-  const { pages: savedPages, visualComponents: vcs, layouts: savedLayouts, ...shell } = site
-  const saveRes = await api(jar, '/site-document', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      mode: 'replace',
-      site: shell,
-      changedPages: savedPages,
-      deletedPageIds: [],
-      changedComponents: vcs,
-      deletedComponentIds: [],
-      changedLayouts: savedLayouts,
-      deletedLayoutIds: [],
-      baseSeqs: {},
-      shellBaseSeq: shellBody.seq ?? 0,
-    }),
-  })
-  if (!saveRes.ok) {
-    throw new Error(`site-document save failed ${saveRes.status} ${await saveRes.text()}`)
-  }
+  await client.saveSite(site, seq)
   steps.push('site-document-saved')
 
-  const stepUp = await api(jar, '/auth/step-up', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: PASSWORD }),
-  })
-  if (!stepUp.ok) throw new Error(`step-up failed ${stepUp.status} ${await stepUp.text()}`)
+  await client.stepUp()
   steps.push('step-up-ok')
 
-  const pubRes = await api(jar, '/publish', { method: 'POST' })
-  if (!pubRes.ok) throw new Error(`publish failed ${pubRes.status} ${await pubRes.text()}`)
-  const pubJson = await pubRes.json()
+  const pubJson = await client.publish()
   steps.push(`publish-ok ${JSON.stringify(pubJson)}`)
 
-  const targetUrl = publicUrlForSlug(slug)
-  const targetVerify = await verifyPublishedPage(targetUrl)
-  const homeVerify = slug === 'index' ? targetVerify : await verifyPublishedPage('http://localhost:3001/')
+  const targetUrl = publicUrlForSlug(slug, client.origin)
+  const targetVerify = await verifyPublishedPage(targetUrl, client.origin)
+  const homeVerify = slug === 'index'
+    ? targetVerify
+    : await verifyPublishedPage(publicUrlForSlug('index', client.origin), client.origin)
 
   const targetOk =
     targetVerify.status === 200 &&
@@ -677,7 +582,7 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  const { report: REPORT } = parseArgs(process.argv.slice(2))
+  const { report: REPORT } = parseRunArgs(process.argv.slice(2))
   const report = {
     ok: false,
     error: err instanceof Error ? err.stack ?? err.message : String(err),
