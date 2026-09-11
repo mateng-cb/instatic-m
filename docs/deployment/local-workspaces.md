@@ -105,6 +105,18 @@ Production is the authority; the local copy is just overwritten:
    locally — they are keyed to the production `INSTATIC_SECRET_KEY`, which
    deliberately never leaves the VPS. Everything else works normally.
 
+The repair scripts (`scripts/verify-ditexpo-api-import.ts`, `scripts/ditexpo-*`)
+run against such a snapshot through one shared API client
+(`scripts/lib/cmsClient.ts`). Credentials are always explicit —
+`--email/--password` flags or `INSTATIC_EMAIL`/`INSTATIC_PASSWORD` env vars
+(prefer env vars: they stay out of shell history); `--api`/`INSTATIC_API`
+overrides the default origin `http://localhost:3001`. When a snapshot carries
+hand-edited pages that must survive a full re-import,
+`scripts/ditexpo-pages-export-restore.ts --export` backs up every page tree
+before the re-import and `--restore --slugs <list>` writes the hand-edited
+trees back afterwards (page trees reference styles by class name only, so they
+adopt the rebuilt style system).
+
 ## What lives in git
 
 Only code and deployment **configuration**: `deploy/<site>/compose.yml`,
