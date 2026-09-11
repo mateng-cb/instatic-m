@@ -95,3 +95,6 @@ dite-release-*/
 
 # Server SSH access — credentials, never commit
 deploy/ecs/
+
+# Generated output of GitHub publish test runs
+github-publish-workdir/
