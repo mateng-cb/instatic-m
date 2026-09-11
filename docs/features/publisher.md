@@ -664,7 +664,7 @@ Job outcome on the progress endpoint: `state: 'succeeded'` with `result: { commi
 
 ### Admin UI
 
-- **Publish menu → Publish to GitHub…** — `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` (via `PublishButton.tsx`)
+- **Publish menu → Publish to GitHub…** — `src/admin/modals/GithubPublishDialog/GithubPublishDialog.tsx` (via `PublishButton.tsx`) — confirm-and-track only: read-only settings view + job progress; configuration happens in Settings (see [ADR-0005](../adr/0005-publish-dialog-confirms-not-configures.md))
 - **Settings → Publishing** — GitHub Pages block in `src/admin/modals/Settings/sections/PublishingSection.tsx` (defaults + token only; push from Publish menu)
 
 ### Code map
