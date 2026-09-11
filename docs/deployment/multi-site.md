@@ -12,6 +12,12 @@ for why, and [github-pages.md](github-pages.md) for the export pipeline.
 
 Decision record: [ADR 0001 — one instance per site](../adr/0001-one-instance-per-site.md).
 
+> **Current live state (2026-09-11):** only **ditexpo** is provisioned on the
+> VPS, living at `/opt/sites/ditexpo` (its own `compose.yml` + `.env`). The
+> four-site table below is the target layout — the other sites have no
+> containers, directories, or Nginx configs yet. Provision them following
+> this document when needed.
+
 ---
 
 ## TL;DR
